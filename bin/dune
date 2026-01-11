@@ -1,4 +1,6 @@
 (executable
- (public_name ocaml64)
  (name main)
- (libraries base stdio ocaml64))
+ (public_name ocaml64)
+ (preprocess
+  (pps ppx_sexp_conv))
+ (libraries base sexplib stdio ocaml64))
