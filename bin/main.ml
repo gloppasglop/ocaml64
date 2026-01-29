@@ -1,70 +1,51 @@
 open Base
 open Stdio
-open Ocaml64.C6502.Cpu
+open Ocaml64.C64
 
-let () =
-  printf "";
-  let opcodes =
-    [ 0xEA; 0x2A; 0xA9; 0xA5; 0xB5; 0xAD; 0xBD; 0xB9; 0xA1; 0xB1; 0xB6; 0x6C; 0x90 ]
-    (* NOP*)
-  in
-  List.iter opcodes ~f:(fun opcode ->
-    let { inst; mode; cycles; bytes } = decode opcode in
-    printf "%s : Cycles=%d, Bytes = %d\n" (inst_to_string inst mode) cycles bytes)
-;;
-
-let cpu =
-  { (* Pins *)
-    rdy = true (* Ready *)
-  ; irq = false (* IRQ - Inverted *)
-  ; nmi = false (* Non Maskable Interrrupt - Inverted *)
-  ; phy1 = true (* phy1 , IN*)
-  ; phy2 = true (* phy2 , OUT*)
-  ; aec = true (* Address Enable Control *)
-  ; rw = true (* R/W Read/Write *)
-  ; reset = false (* Reset - Inverted *)
-  ; address = 0x1000 (* Pins A0 to A15 *)
-  ; data = 0xEA (* Pins DB0 to DB7 *)
-  ; ioport = 0 (* Pins P0 to  P7 *)
-  ; a = 0 (* A register *)
-  ; x = 0 (* X register *)
-  ; y = 0 (* Y register *)
-  ; sr = 0 (* Status register *)
-  ; pc = 0x1000 (* Program counter *)
-  ; sp = 0xFF (* Stack pointer *)
-  ; ir =
-      decode 0x00
-      (* Internal instruction register TODO: Should it be directly teh decoded instruction *)
-  ; cycle = 1
-  }
-;;
-
-let () =
-  let s = sexp_of_cpu cpu in
-  let o = Sexplib.Sexp.to_string_hum s in
-  printf "%s\n" o
-;;
-
-open Ocaml64.C6502
-
-let mem = Array.create ~len:65536 0xFF
+(* let mem = Array.create ~len:65536 0xFF *)
 
 (* let pgm = [ 0xEA; 0xA9; 0x09; 0xA9; 0x00; 0xA9; 0x89; 0xA2; 0x09; 0xA2; 0x00; 0xA2; 0x89 ] *)
-let pgm = [ 0xEA ]
-let load_pgm mem offset pgm = List.iteri pgm ~f:(fun i data -> mem.(offset + i) <- data)
-let () = load_pgm mem 0x1000 pgm
-let computer = Computer.create mem
-let computer = { computer with cpu = { computer.cpu with pc = 0x1000; address = 0x1000 } }
+(* let pgm = [ 0xEA ] *)
 
-(* let () = mem.(0x1000) <- 0xEA *)
-(* let () = mem.(0x1001) <- 0xA9 *)
-(* let () = mem.(0x1002) <- 0xFF *)
-let () = printf "%s\n" (Ocaml64.C6502.Cpu.cpu_to_string cpu)
+let () = printf "\n"
+let () = printf "Hi!\n"
 
-let rec loop computer =
-  let computer = Computer.fetch_decode_execute computer in
-  printf "%s\n" (Cpu.cpu_to_string computer.cpu);
-  loop computer
+(* let _ = C64.create 3 *)
+let load_pgm mem offset pgm =
+  List.iteri pgm ~f:(fun i data ->
+    printf "Loading 0x%02X to 0x%04X " data (offset + i);
+    mem.(offset + i) <- data)
 ;;
 
-let () = loop computer
+let rec execute_cycles i acc (computer : Ocaml64.C64.M.t) =
+  if i = 0
+  then acc |> List.rev
+  else (
+    let computer' = M.fetch_decode_execute computer in
+    execute_cycles (i - 1) (computer :: acc) computer')
+;;
+
+let init_test_computer mem pgm =
+  load_pgm mem 0x1000 pgm;
+  let computer = M.create mem in
+  { computer with cpu = { computer.cpu with pc = 0x1000; address = 0x1000 } }
+;;
+
+open Ocaml64.C6510.M
+
+let dump_executions =
+  let open Ocaml64.C6510.M in
+  List.iter ~f:(fun (computer : M.t) -> cpu_to_string computer.cpu |> printf "%s")
+;;
+
+let cycles = 3
+let pgm = [ 0x65; 0x44 ]
+let mem = Array.create ~len:65536 0xFF
+let () = load_pgm mem 0x1000 pgm
+let computer = init_test_computer mem pgm
+
+let () =
+  printf "%s\n" (cpu_to_string computer.cpu);
+  let executions = execute_cycles cycles [] computer in
+  dump_executions executions
+;;
