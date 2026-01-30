@@ -193,32 +193,37 @@ module M = struct
       | 0x00 -> BRK, IMPLIED, 1, 7
       | 0x05 -> ORA, ZEROPAGE, 2, 3
       | 0x06 -> ASL, ZEROPAGE, 2, 5
+      | 0x24 -> BIT, ZEROPAGE, 2, 3
       | 0x25 -> AND, ZEROPAGE, 2, 3
       | 0x26 -> ROL, ZEROPAGE, 2, 5
+      | 0x2A -> ROL, ACCUMULATOR, 1, 2
+      | 0x45 -> EOR, ZEROPAGE, 2, 3
       | 0x46 -> LSR, ZEROPAGE, 2, 5
       | 0x65 -> ADC, ZEROPAGE, 2, 3
       | 0x66 -> ROR, ZEROPAGE, 2, 5
+      | 0x6C -> JMP, INDIRECT, 3, 5
       | 0x84 -> STY, ZEROPAGE, 2, 3
       | 0x85 -> STA, ZEROPAGE, 2, 3
       | 0x86 -> STX, ZEROPAGE, 2, 3
-      | 0xEA -> NOP, IMPLIED, 1, 2
-      | 0x2A -> ROL, ACCUMULATOR, 1, 2
-      | 0xA9 -> LDA, IMMEDIATE, 2, 2
-      | 0xA5 -> LDA, ZEROPAGE, 2, 3
-      | 0xB5 -> LDA, ZEROPAGEX, 2, 4
-      | 0xAD -> LDA, ABSOLUTE, 3, 4
-      | 0xBD -> LDA, ABSOLUTEX, 3, 4
-      | 0xB9 -> LDA, ABSOLUTEY, 3, 4
-      | 0xA1 -> LDA, INDEXEDINDIRECT, 2, 6
-      | 0xB1 -> LDA, INDIRECTINDEXED, 2, 5
-      | 0xA2 -> LDX, IMMEDIATE, 2, 2
-      | 0xA6 -> LDX, ZEROPAGE, 2, 3
-      | 0xB6 -> LDX, ZEROPAGEY, 2, 4
-      | 0xA0 -> LDY, IMMEDIATE, 2, 2
-      | 0xA4 -> LDY, ZEROPAGE, 2, 3
-      | 0x6C -> JMP, INDIRECT, 3, 5
-      | 0x45 -> EOR, ZEROPAGE, 2, 3
       | 0x90 -> BCC, RELATIVE, 2, 2
+      | 0xA0 -> LDY, IMMEDIATE, 2, 2
+      | 0xA1 -> LDA, INDEXEDINDIRECT, 2, 6
+      | 0xA2 -> LDX, IMMEDIATE, 2, 2
+      | 0xA4 -> LDY, ZEROPAGE, 2, 3
+      | 0xA5 -> LDA, ZEROPAGE, 2, 3
+      | 0xA6 -> LDX, ZEROPAGE, 2, 3
+      | 0xA9 -> LDA, IMMEDIATE, 2, 2
+      | 0xAD -> LDA, ABSOLUTE, 3, 4
+      | 0xB1 -> LDA, INDIRECTINDEXED, 2, 5
+      | 0xB5 -> LDA, ZEROPAGEX, 2, 4
+      | 0xB6 -> LDX, ZEROPAGEY, 2, 4
+      | 0xB9 -> LDA, ABSOLUTEY, 3, 4
+      | 0xBD -> LDA, ABSOLUTEX, 3, 4
+      | 0xC5 -> CMP, ZEROPAGE, 2, 3
+      | 0xC6 -> DEC, ZEROPAGE, 2, 5
+      | 0xE5 -> SBC, ZEROPAGE, 2, 3
+      | 0xE6 -> INC, ZEROPAGE, 2, 5
+      | 0xEA -> NOP, IMPLIED, 1, 2
       | opcode -> failwith (Printf.sprintf "Opcode 0x%02X Not implemented" opcode)
     in
     { inst = mnemonic; mode; bytes; cycles }
@@ -263,21 +268,51 @@ module M = struct
   (* Positive + Positive = Negative *)
   (* or *)
   (* Negative + Negative = Positive *)
-  let adc a m sr =
+  let inst_adc a m sr =
     let res = a + m + (sr land 0x01) in
-    (* let carry = res land 0b1_0000_0000 = 0b1_0000_0000 in *)
     let carry = (res land 0b1_0000_0000) lsr 8 in
-    let overflow =
-      if a land 0b1000_0000 = m land 0b1000_0000
-      then not (a land 0b1000_0000 = res land 0b1000_0000)
-      else false
-    in
+    let res = res land 0xFF in
+    let overflow = (a lxor res land (m lxor res) land 0x80) lsr 1 in
     let res = res land 0xFF in
     let sr1 = set_nz sr res in
-    (* let sr2 = if carry then sr1 lor 0b0000_0001 else sr1 land 0b1111_1110 in *)
     let sr2 = sr1 land lnot 0b0000_0001 lor (carry land 0b0000_0001) in
-    let sr3 = if overflow then sr2 lor 0b0100_0000 else sr2 land 0b1011_1111 in
+    let sr3 = sr2 land lnot 0b0100_0000 lor (overflow land 0b0100_0000) in
     res land 0xFF, sr3
+  ;;
+
+  let inst_sbc a m sr =
+    let m = (0xFF - m) land 0xFF in
+    inst_adc a m sr
+  ;;
+
+  let inst_bit a m sr =
+    let res = a land m in
+    let sr = if res = 0 then sr lor 0b0000_0010 else sr land lnot 0b0000_0010 in
+    let sr = sr land lnot 0b1100_0000 lor (m land 0b1100_0000) in
+    a, sr
+  ;;
+
+  (* let inst_cmp a m _ = *)
+  (* let res = (a - m) land 0xFF in *)
+  (* let carry = if a >= m then 0b0000_0001 else 0b0000_0000 in *)
+  (* res, set_nz carry res *)
+  (* ;; *)
+
+  let inst_cmp a m sr =
+    let sr' = sr land lnot 0b0000_0001 lor 0b0000_0001 in
+    inst_sbc a m sr'
+  ;;
+
+  let inst_inc m sr =
+    let res = (m + 1) land 0xFF in
+    let sr = set_nz sr res in
+    res, sr
+  ;;
+
+  let inst_dec m sr =
+    let res = (m - 1) land 0xFF in
+    let sr = set_nz sr res in
+    res, sr
   ;;
 
   let inst_asl a sr =
@@ -336,8 +371,22 @@ module M = struct
           | STA -> { cpu with address = operand; data = cpu.a; pc; rw = false; cycle = 3 }
           | STX -> { cpu with address = operand; data = cpu.x; pc; rw = false; cycle = 3 }
           | STY -> { cpu with address = operand; data = cpu.y; pc; rw = false; cycle = 3 }
-          | LDA | LDX | LDY | AND | ORA | EOR | ADC | ASL | LSR | ROR | ROL ->
-            { cpu with address = operand; pc; rw = true; cycle = 3 }
+          | LDA
+          | LDX
+          | LDY
+          | AND
+          | ORA
+          | EOR
+          | ADC
+          | SBC
+          | ASL
+          | LSR
+          | ROR
+          | INC
+          | ROL
+          | DEC
+          | CMP
+          | BIT -> { cpu with address = operand; pc; rw = true; cycle = 3 }
           | _ -> failwith "ZEROPAGE 2 Not implemnetd")
        | IMMEDIATE ->
          let data = cpu.data in
@@ -417,8 +466,20 @@ module M = struct
             { cpu with a; sr = set_nz cpu.sr a; address = cpu.pc; rw = true; cycle = 1 }
           | ADC ->
             let data = cpu.data in
-            let a, sr = adc cpu.a data cpu.sr in
+            let a, sr = inst_adc cpu.a data cpu.sr in
             { cpu with a; sr; address = cpu.pc; rw = true; cycle = 1 }
+          | SBC ->
+            let data = cpu.data in
+            let a, sr = inst_sbc cpu.a data cpu.sr in
+            { cpu with a; sr; address = cpu.pc; rw = true; cycle = 1 }
+          | CMP ->
+            let data = cpu.data in
+            let _, sr = inst_cmp cpu.a data cpu.sr in
+            { cpu with sr; address = cpu.pc; rw = true; cycle = 1 }
+          | BIT ->
+            let data = cpu.data in
+            let _, sr = inst_bit cpu.a data cpu.sr in
+            { cpu with sr; address = cpu.pc; rw = true; cycle = 1 }
           | STA ->
             let data = cpu.a in
             { cpu with data; address = cpu.pc; rw = true; cycle = 1 }
@@ -428,7 +489,8 @@ module M = struct
           | STY ->
             let data = cpu.y in
             { cpu with data; address = cpu.pc; rw = true; cycle = 1 }
-          | ASL | LSR | ROR | ROL -> { cpu with data = cpu.data; rw = false; cycle = 4 }
+          | ASL | LSR | ROR | ROL | INC | DEC ->
+            { cpu with data = cpu.data; rw = false; cycle = 4 }
           | _ -> failwith "Not implemened")
        | _ -> failwith "Addressing Not implemented")
     | 4 ->
@@ -447,13 +509,20 @@ module M = struct
           | ROL ->
             let data, sr = inst_rol cpu.data cpu.sr in
             { cpu with data; sr; rw = false; cycle = 5 }
+          | INC ->
+            let data, sr = inst_inc cpu.data cpu.sr in
+            { cpu with data; sr; rw = false; cycle = 5 }
+          | DEC ->
+            let data, sr = inst_dec cpu.data cpu.sr in
+            { cpu with data; sr; rw = false; cycle = 5 }
           | _ -> failwith "Inst not implemented")
        | _ -> failwith "Addressing not implemented")
     | 5 ->
       (match cpu.ir.mode with
        | ZEROPAGE ->
          (match cpu.ir.inst with
-          | ASL | LSR | ROR | ROL -> { cpu with address = cpu.pc; rw = true; cycle = 1 }
+          | ASL | LSR | ROR | ROL | INC | DEC ->
+            { cpu with address = cpu.pc; rw = true; cycle = 1 }
           | _ -> failwith "Inst not implemented")
        | _ -> failwith "Addressing not implemented")
     | 6 -> failwith "Cycle 6 Unimplemented"
