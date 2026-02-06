@@ -202,6 +202,8 @@ module M = struct
       | 0x0A -> ASL, ACCUMULATOR, 1, 2
       | 0x0D -> ORA, ABSOLUTE, 3, 4
       | 0x0E -> ASL, ABSOLUTE, 3, 6
+      | 0x15 -> ORA, ZEROPAGEX, 2, 4
+      | 0x16 -> ASL, ZEROPAGEX, 2, 6
       | 0x18 -> CLC, IMPLIED, 1, 2
       | 0x24 -> BIT, ZEROPAGE, 2, 3
       | 0x25 -> AND, ZEROPAGE, 2, 3
@@ -212,6 +214,7 @@ module M = struct
       | 0x2C -> BIT, ABSOLUTE, 3, 4
       | 0x2D -> AND, ABSOLUTE, 3, 4
       | 0x2E -> ROL, ABSOLUTE, 3, 6
+      | 0x35 -> AND, ZEROPAGEX, 2, 4
       | 0x38 -> SEC, IMPLIED, 1, 2
       | 0x45 -> EOR, ZEROPAGE, 2, 3
       | 0x46 -> LSR, ZEROPAGE, 2, 5
@@ -221,6 +224,7 @@ module M = struct
       | 0x4C -> JMP, ABSOLUTE, 3, 3
       | 0x4D -> EOR, ABSOLUTE, 3, 4
       | 0x4E -> LSR, ABSOLUTE, 3, 6
+      | 0x55 -> EOR, ZEROPAGEX, 2, 4
       | 0x58 -> CLI, IMPLIED, 1, 2
       | 0x65 -> ADC, ZEROPAGE, 2, 3
       | 0x66 -> ROR, ZEROPAGE, 2, 5
@@ -230,6 +234,7 @@ module M = struct
       | 0x6C -> JMP, INDIRECT, 3, 5
       | 0x6D -> ADC, ABSOLUTE, 3, 4
       | 0x6E -> ROR, ABSOLUTE, 3, 6
+      | 0x75 -> ADC, ZEROPAGEX, 2, 4
       | 0x78 -> SEI, IMPLIED, 1, 2
       | 0x84 -> STY, ZEROPAGE, 2, 3
       | 0x85 -> STA, ZEROPAGE, 2, 3
@@ -240,6 +245,8 @@ module M = struct
       | 0x8D -> STA, ABSOLUTE, 3, 4
       | 0x8E -> STX, ABSOLUTE, 3, 4
       | 0x90 -> BCC, RELATIVE, 2, 2
+      | 0x94 -> STY, ZEROPAGEX, 2, 4
+      | 0x95 -> STA, ZEROPAGEX, 2, 4
       | 0x98 -> TYA, IMPLIED, 1, 2
       | 0x9A -> TXS, IMPLIED, 1, 2
       | 0xA0 -> LDY, IMMEDIATE, 2, 2
@@ -255,6 +262,7 @@ module M = struct
       | 0xAE -> LDX, ABSOLUTE, 3, 4
       | 0xAC -> LDY, ABSOLUTE, 3, 4
       | 0xB1 -> LDA, INDIRECTINDEXED, 2, 5
+      | 0xB4 -> LDY, ZEROPAGEX, 2, 4
       | 0xB5 -> LDA, ZEROPAGEX, 2, 4
       | 0xB6 -> LDX, ZEROPAGEY, 2, 4
       | 0xB8 -> CLV, IMPLIED, 1, 2
@@ -271,6 +279,8 @@ module M = struct
       | 0xCC -> CPY, ABSOLUTE, 3, 4
       | 0xCD -> CMP, ABSOLUTE, 3, 4
       | 0xCE -> DEC, ABSOLUTE, 3, 6
+      | 0xD5 -> CMP, ZEROPAGEX, 2, 4
+      | 0xD6 -> DEC, ZEROPAGEX, 2, 6
       | 0xD8 -> CLD, IMPLIED, 1, 2
       | 0xE0 -> CPX, IMMEDIATE, 2, 2
       | 0xE4 -> CPX, ZEROPAGE, 2, 3
@@ -280,6 +290,7 @@ module M = struct
       | 0xEA -> NOP, IMPLIED, 1, 2
       | 0xEC -> CPX, ABSOLUTE, 3, 4
       | 0xEE -> INC, ABSOLUTE, 3, 6
+      | 0xF6 -> INC, ZEROPAGEX, 2, 6
       | 0xF8 -> SED, IMPLIED, 1, 2
       | opcode -> failwith (Printf.sprintf "Opcode 0x%02X Not implemented" opcode)
     in
@@ -624,6 +635,12 @@ module M = struct
           | CPY
           | BIT -> { cpu with address = operand; pc; rw = true; cycle = 3 }
           | _ -> failwith "ZEROPAGEX Cycle 2 Not implemnetd")
+       | ZEROPAGEY ->
+         let operand = cpu.data in
+         let pc = cpu.pc + 1 in
+         (match cpu.ir.inst with
+          | STX | LDX -> { cpu with address = operand; pc; rw = true; cycle = 3 }
+          | _ -> failwith "ZEROPAGEY Cycle 2 Not implemnetd")
        | ABSOLUTE ->
          let pcl = cpu.data in
          let pc = cpu.pc + 1 in
@@ -793,6 +810,14 @@ module M = struct
           | CPY
           | BIT -> { cpu with address; pc; rw = true; cycle = 4 }
           | _ -> failwith "ZEROPAGEX Cycle 3 Not implemnetd")
+       | ZEROPAGEY ->
+         let operand = cpu.data in
+         let pc = cpu.pc in
+         let address = (operand + cpu.y) land 0xFF in
+         (match cpu.ir.inst with
+          | STX -> { cpu with address; data = cpu.x; pc; rw = false; cycle = 4 }
+          | LDX -> { cpu with address; pc; rw = true; cycle = 4 }
+          | _ -> failwith "ZEROPAGEX Cycle 3 Not implemnetd")
        | ABSOLUTE ->
          let pch = cpu.data in
          let address = (pch lsl 8) lor cpu.pcl in
@@ -923,7 +948,22 @@ module M = struct
             let data = cpu.y in
             { cpu with data; address = cpu.pc; rw = true; cycle = 1 }
           | ASL | LSR | ROR | ROL | INC | DEC ->
-            { cpu with data = cpu.data; rw = false; cycle = 4 }
+            { cpu with data = cpu.data; rw = false; cycle = 5 }
+          | _ -> failwith "Not implemened")
+       | ZEROPAGEY ->
+         (match cpu.ir.inst with
+          | LDX ->
+            let data = cpu.data in
+            { cpu with
+              x = data
+            ; sr = set_nz cpu.sr data
+            ; address = cpu.pc
+            ; rw = true
+            ; cycle = 1
+            }
+          | STX ->
+            let data = cpu.x in
+            { cpu with data; address = cpu.pc; rw = true; cycle = 1 }
           | _ -> failwith "Not implemened")
        | ABSOLUTE ->
          (match cpu.ir.inst with
