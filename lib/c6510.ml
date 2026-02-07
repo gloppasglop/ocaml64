@@ -56,6 +56,7 @@ module M = struct
     | TXA
     | TXS
     | TYA
+    | JAM
   [@@warning "-37"]
 
   type addressingmode =
@@ -72,6 +73,7 @@ module M = struct
     | ZEROPAGE
     | ZEROPAGEX
     | ZEROPAGEY
+    | ILLEGAL
 
   type decoded_instruction =
     { inst : instruction
@@ -167,6 +169,7 @@ module M = struct
     | TXA -> "TXA"
     | TXS -> "TXS"
     | TYA -> "TYA"
+    | JAM -> "JAM"
   [@@deriving sexp]
   ;;
 
@@ -185,70 +188,162 @@ module M = struct
     | ZEROPAGE -> Printf.sprintf "%s $%%02X" (instruction_to_string inst)
     | ZEROPAGEX -> Printf.sprintf "%s $%%02X,X" (instruction_to_string inst)
     | ZEROPAGEY -> Printf.sprintf "%s $%%02X,Y" (instruction_to_string inst)
+    | ILLEGAL -> Printf.sprintf "%s" "ILLEGAL"
   ;;
 
   let decode inst =
     let mnemonic, mode, bytes, cycles =
       match inst with
       | 0x00 -> BRK, IMPLIED, 1, 7
-      (* | 0x01 -> BPL, RELATIVE, 0, 0 *)
-      (* | 0x02 -> JSR, ABSOLUTE, 0, 0 *)
-      (* | 0x03 -> BMI, RELATIVE, 0, 0 *)
-      (* | 0x04 -> RTI, IMPLIED, 0, 0 *)
+      | 0x01 -> ORA, INDEXEDINDIRECT, 2, 6
+      | 0x02 -> JAM, ILLEGAL, 0, 0
+      | 0x03 -> JAM, ILLEGAL, 0, 0
+      | 0x04 -> JAM, ILLEGAL, 0, 0
       | 0x05 -> ORA, ZEROPAGE, 2, 3
       | 0x06 -> ASL, ZEROPAGE, 2, 5
+      | 0x07 -> JAM, ILLEGAL, 0, 0
       | 0x08 -> PHP, IMPLIED, 1, 3
       | 0x09 -> ORA, IMMEDIATE, 2, 2
       | 0x0A -> ASL, ACCUMULATOR, 1, 2
+      | 0x0B -> JAM, ILLEGAL, 0, 0
+      | 0x0C -> JAM, ILLEGAL, 0, 0
       | 0x0D -> ORA, ABSOLUTE, 3, 4
       | 0x0E -> ASL, ABSOLUTE, 3, 6
+      | 0x0F -> JAM, ILLEGAL, 0, 0
+      | 0x10 -> BPL, RELATIVE, 2, 2
+      | 0x11 -> ORA, INDIRECTINDEXED, 2, 5
+      | 0x12 -> JAM, ILLEGAL, 0, 0
+      | 0x13 -> JAM, ILLEGAL, 0, 0
+      | 0x14 -> JAM, ILLEGAL, 0, 0
       | 0x15 -> ORA, ZEROPAGEX, 2, 4
       | 0x16 -> ASL, ZEROPAGEX, 2, 6
+      | 0x17 -> JAM, ILLEGAL, 0, 0
       | 0x18 -> CLC, IMPLIED, 1, 2
+      | 0x19 -> ORA, ABSOLUTEY, 3, 4
+      | 0x1A -> JAM, ILLEGAL, 0, 0
+      | 0x1B -> JAM, ILLEGAL, 0, 0
+      | 0x1C -> JAM, ILLEGAL, 0, 0
+      | 0x1D -> ORA, ABSOLUTEX, 3, 4
+      | 0x1E -> ASL, ABSOLUTEX, 3, 7
+      | 0x1F -> JAM, ILLEGAL, 0, 0
+      | 0x20 -> JSR, ABSOLUTE, 3, 6
+      | 0x21 -> AND, INDEXEDINDIRECT, 2, 6
+      | 0x22 -> JAM, ILLEGAL, 0, 0
+      | 0x23 -> JAM, ILLEGAL, 0, 0
       | 0x24 -> BIT, ZEROPAGE, 2, 3
       | 0x25 -> AND, ZEROPAGE, 2, 3
       | 0x26 -> ROL, ZEROPAGE, 2, 5
+      | 0x27 -> JAM, ILLEGAL, 0, 0
       | 0x28 -> PLP, IMPLIED, 1, 4
       | 0x29 -> AND, IMMEDIATE, 2, 2
       | 0x2A -> ROL, ACCUMULATOR, 1, 2
+      | 0x2B -> JAM, ILLEGAL, 0, 0
       | 0x2C -> BIT, ABSOLUTE, 3, 4
       | 0x2D -> AND, ABSOLUTE, 3, 4
       | 0x2E -> ROL, ABSOLUTE, 3, 6
+      | 0x30 -> BMI, RELATIVE, 2, 2
+      | 0x31 -> AND, INDIRECTINDEXED, 2, 5
+      | 0x32 -> JAM, ILLEGAL, 0, 0
+      | 0x33 -> JAM, ILLEGAL, 0, 0
+      | 0x34 -> JAM, ILLEGAL, 0, 0
       | 0x35 -> AND, ZEROPAGEX, 2, 4
+      | 0x36 -> ROL, ZEROPAGEX, 2, 6
+      | 0x37 -> JAM, ILLEGAL, 0, 0
       | 0x38 -> SEC, IMPLIED, 1, 2
+      | 0x39 -> AND, ABSOLUTEY, 3, 4
+      | 0x3A -> JAM, ILLEGAL, 0, 0
+      | 0x3B -> JAM, ILLEGAL, 0, 0
+      | 0x3C -> JAM, ILLEGAL, 0, 0
+      | 0x3D -> AND, ABSOLUTEX, 3, 4
+      | 0x3E -> ROL, ABSOLUTEX, 3, 7
+      | 0x3F -> JAM, ILLEGAL, 0, 0
+      | 0x40 -> RTI, IMPLIED, 1, 6
+      | 0x41 -> EOR, INDEXEDINDIRECT, 2, 6
+      | 0x42 -> JAM, ILLEGAL, 0, 0
+      | 0x43 -> JAM, ILLEGAL, 0, 0
+      | 0x44 -> JAM, ILLEGAL, 0, 0
       | 0x45 -> EOR, ZEROPAGE, 2, 3
       | 0x46 -> LSR, ZEROPAGE, 2, 5
+      | 0x47 -> JAM, ILLEGAL, 0, 0
       | 0x48 -> PHA, IMPLIED, 1, 3
       | 0x49 -> EOR, IMMEDIATE, 2, 2
       | 0x4A -> LSR, ACCUMULATOR, 1, 2
+      | 0x4B -> JAM, ILLEGAL, 0, 0
       | 0x4C -> JMP, ABSOLUTE, 3, 3
       | 0x4D -> EOR, ABSOLUTE, 3, 4
       | 0x4E -> LSR, ABSOLUTE, 3, 6
+      | 0x4F -> JAM, ILLEGAL, 0, 0
+      | 0x50 -> BVC, RELATIVE, 2, 2
+      | 0x51 -> EOR, INDIRECTINDEXED, 2, 5
+      | 0x52 -> BVC, RELATIVE, 2, 2
+      | 0x53 -> BVC, RELATIVE, 2, 2
+      | 0x54 -> BVC, RELATIVE, 2, 2
       | 0x55 -> EOR, ZEROPAGEX, 2, 4
+      | 0x56 -> LSR, ZEROPAGEX, 2, 6
       | 0x58 -> CLI, IMPLIED, 1, 2
+      | 0x59 -> EOR, ABSOLUTEY, 3, 4
+      | 0x5D -> EOR, ABSOLUTEX, 3, 4
+      | 0x5E -> LSR, ABSOLUTEX, 3, 7
+      | 0x5F -> JAM, ILLEGAL, 0, 0
+      | 0x60 -> RTS, IMPLIED, 1, 6
+      | 0x61 -> ADC, INDEXEDINDIRECT, 2, 6
+      | 0x62 -> JAM, ILLEGAL, 0, 0
+      | 0x63 -> JAM, ILLEGAL, 0, 0
+      | 0x64 -> JAM, ILLEGAL, 0, 0
       | 0x65 -> ADC, ZEROPAGE, 2, 3
       | 0x66 -> ROR, ZEROPAGE, 2, 5
+      | 0x67 -> JAM, ILLEGAL, 0, 0
       | 0x68 -> PLA, IMPLIED, 1, 4
       | 0x69 -> ADC, IMMEDIATE, 2, 2
       | 0x6A -> ROR, ACCUMULATOR, 1, 2
+      | 0x6B -> JAM, ILLEGAL, 0, 0
       | 0x6C -> JMP, INDIRECT, 3, 5
       | 0x6D -> ADC, ABSOLUTE, 3, 4
       | 0x6E -> ROR, ABSOLUTE, 3, 6
+      | 0x6F -> JAM, ILLEGAL, 0, 0
+      | 0x70 -> BVS, RELATIVE, 2, 2
+      | 0x71 -> ADC, INDIRECTINDEXED, 2, 5
+      | 0x72 -> JAM, ILLEGAL, 0, 0
+      | 0x73 -> JAM, ILLEGAL, 0, 0
+      | 0x74 -> JAM, ILLEGAL, 0, 0
       | 0x75 -> ADC, ZEROPAGEX, 2, 4
+      | 0x76 -> ROR, ZEROPAGEX, 2, 6
+      | 0x77 -> JAM, ILLEGAL, 0, 0
       | 0x78 -> SEI, IMPLIED, 1, 2
+      | 0x79 -> ADC, ABSOLUTEY, 3, 4
+      | 0x7A -> JAM, ILLEGAL, 0, 0
+      | 0x7B -> JAM, ILLEGAL, 0, 0
+      | 0x7C -> JAM, ILLEGAL, 0, 0
+      | 0x7D -> ADC, ABSOLUTEX, 3, 4
+      | 0x7E -> ROR, ABSOLUTEX, 3, 7
+      | 0x7F -> JAM, ILLEGAL, 0, 0
+      | 0x80 -> JAM, ILLEGAL, 0, 0
+      | 0x81 -> STA, INDEXEDINDIRECT, 2, 6
+      | 0x82 -> JAM, ILLEGAL, 0, 0
+      | 0x83 -> JAM, ILLEGAL, 0, 0
       | 0x84 -> STY, ZEROPAGE, 2, 3
       | 0x85 -> STA, ZEROPAGE, 2, 3
       | 0x86 -> STX, ZEROPAGE, 2, 3
+      | 0x87 -> JAM, ILLEGAL, 0, 0
       | 0x88 -> DEY, IMPLIED, 1, 2
+      | 0x89 -> JAM, ILLEGAL, 0, 0
       | 0x8A -> TXA, IMPLIED, 1, 2
+      | 0x8B -> JAM, ILLEGAL, 0, 0
       | 0x8C -> STY, ABSOLUTE, 3, 4
       | 0x8D -> STA, ABSOLUTE, 3, 4
       | 0x8E -> STX, ABSOLUTE, 3, 4
+      | 0x8F -> JAM, ILLEGAL, 0, 0
       | 0x90 -> BCC, RELATIVE, 2, 2
+      | 0x91 -> STA, INDIRECTINDEXED, 2, 5
+      | 0x92 -> JAM, ILLEGAL, 0, 0
+      | 0x93 -> JAM, ILLEGAL, 0, 0
       | 0x94 -> STY, ZEROPAGEX, 2, 4
       | 0x95 -> STA, ZEROPAGEX, 2, 4
+      | 0x97 -> JAM, ILLEGAL, 0, 0
       | 0x98 -> TYA, IMPLIED, 1, 2
+      | 0x99 -> STA, ABSOLUTEY, 3, 4
       | 0x9A -> TXS, IMPLIED, 1, 2
+      | 0x9D -> STA, ABSOLUTEX, 3, 4
       | 0xA0 -> LDY, IMMEDIATE, 2, 2
       | 0xA1 -> LDA, INDEXEDINDIRECT, 2, 6
       | 0xA2 -> LDX, IMMEDIATE, 2, 2
@@ -268,7 +363,9 @@ module M = struct
       | 0xB8 -> CLV, IMPLIED, 1, 2
       | 0xB9 -> LDA, ABSOLUTEY, 3, 4
       | 0xBA -> TSX, IMPLIED, 1, 2
+      | 0xBC -> LDY, ABSOLUTEX, 3, 4
       | 0xBD -> LDA, ABSOLUTEX, 3, 4
+      | 0xBE -> LDX, ABSOLUTEY, 3, 4
       | 0xC0 -> CPY, IMMEDIATE, 2, 2
       | 0xC4 -> CPY, ZEROPAGE, 2, 3
       | 0xC5 -> CMP, ZEROPAGE, 2, 3
@@ -282,16 +379,24 @@ module M = struct
       | 0xD5 -> CMP, ZEROPAGEX, 2, 4
       | 0xD6 -> DEC, ZEROPAGEX, 2, 6
       | 0xD8 -> CLD, IMPLIED, 1, 2
+      | 0xD9 -> CMP, ABSOLUTEY, 3, 4
+      | 0xDD -> CMP, ABSOLUTEX, 3, 4
+      | 0xDE -> DEC, ABSOLUTEX, 3, 7
       | 0xE0 -> CPX, IMMEDIATE, 2, 2
       | 0xE4 -> CPX, ZEROPAGE, 2, 3
       | 0xE5 -> SBC, ZEROPAGE, 2, 3
       | 0xE6 -> INC, ZEROPAGE, 2, 5
       | 0xE8 -> INX, IMPLIED, 1, 2
+      | 0xE9 -> SBC, IMMEDIATE, 2, 2
       | 0xEA -> NOP, IMPLIED, 1, 2
       | 0xEC -> CPX, ABSOLUTE, 3, 4
+      | 0xED -> SBC, ABSOLUTE, 3, 4
       | 0xEE -> INC, ABSOLUTE, 3, 6
       | 0xF6 -> INC, ZEROPAGEX, 2, 6
       | 0xF8 -> SED, IMPLIED, 1, 2
+      | 0xF9 -> SBC, ABSOLUTEY, 3, 4
+      | 0xFD -> SBC, ABSOLUTEX, 3, 4
+      | 0xFE -> INC, ABSOLUTEX, 3, 7
       | opcode -> failwith (Printf.sprintf "Opcode 0x%02X Not implemented" opcode)
     in
     { inst = mnemonic; mode; bytes; cycles }
@@ -635,6 +740,33 @@ module M = struct
           | CPY
           | BIT -> { cpu with address = operand; pc; rw = true; cycle = 3 }
           | _ -> failwith "ZEROPAGEX Cycle 2 Not implemnetd")
+       | ABSOLUTEX ->
+         let pcl = cpu.data in
+         let pc = cpu.pc + 1 in
+         (match cpu.ir.inst with
+          | STA
+          | LDA
+          | LDY
+          | AND
+          | ORA
+          | EOR
+          | ADC
+          | SBC
+          | ASL
+          | LSR
+          | ROR
+          | INC
+          | ROL
+          | DEC
+          | CMP -> { cpu with address = pc; pcl; pc; rw = true; cycle = 3 }
+          | _ -> failwith "ABSOLUTEY Cycle 2 Not implemnetd")
+       | ABSOLUTEY ->
+         let pcl = cpu.data in
+         let pc = cpu.pc + 1 in
+         (match cpu.ir.inst with
+          | STA | LDA | LDX | AND | ORA | EOR | ADC | SBC | ASL | LSR | CMP ->
+            { cpu with address = pc; pcl; pc; rw = true; cycle = 3 }
+          | _ -> failwith "ABSOLUTEY Cycle 2 Not implemnetd")
        | ZEROPAGEY ->
          let operand = cpu.data in
          let pc = cpu.pc + 1 in
@@ -677,6 +809,9 @@ module M = struct
            | ADC ->
              let a, sr = inst_adc cpu.a data cpu.sr in
              a, cpu.x, cpu.y, sr
+           | SBC ->
+             let a, sr = inst_sbc cpu.a data cpu.sr in
+             a, cpu.x, cpu.y, sr
            | CMP ->
              let _, sr = inst_cmp cpu.a data cpu.sr in
              cpu.a, cpu.x, cpu.y, sr
@@ -697,7 +832,7 @@ module M = struct
              a, cpu.x, cpu.y, set_nz cpu.sr a
            | LDX -> cpu.a, data, cpu.y, set_nz cpu.sr data
            | LDY -> cpu.a, cpu.x, data, set_nz cpu.sr data
-           | _ -> failwith "Not implemented"
+           | _ -> failwith "IMMEDIATE Not implemented"
          in
          { cpu with a; x; y; sr; rw = true; address = pc; pc; cycle = 1 }
        | _ -> failwith "Not implemented")
@@ -786,9 +921,8 @@ module M = struct
             { cpu with data = cpu.data; rw = false; cycle = 4 }
           | _ -> failwith "Not implemened")
        | ZEROPAGEX ->
-         let operand = cpu.data in
          let pc = cpu.pc in
-         let address = (operand + cpu.x) land 0xFF in
+         let address = (cpu.address + cpu.x) land 0xFF in
          (match cpu.ir.inst with
           | STA -> { cpu with address; data = cpu.a; pc; rw = false; cycle = 4 }
           | STY -> { cpu with address; data = cpu.y; pc; rw = false; cycle = 4 }
@@ -811,9 +945,8 @@ module M = struct
           | BIT -> { cpu with address; pc; rw = true; cycle = 4 }
           | _ -> failwith "ZEROPAGEX Cycle 3 Not implemnetd")
        | ZEROPAGEY ->
-         let operand = cpu.data in
          let pc = cpu.pc in
-         let address = (operand + cpu.y) land 0xFF in
+         let address = (cpu.address + cpu.y) land 0xFF in
          (match cpu.ir.inst with
           | STX -> { cpu with address; data = cpu.x; pc; rw = false; cycle = 4 }
           | LDX -> { cpu with address; pc; rw = true; cycle = 4 }
@@ -846,6 +979,37 @@ module M = struct
           | CPY
           | BIT -> { cpu with address; pc; rw = true; cycle = 4 }
           | _ -> failwith "ABSOLUTE Cycle 3 Not implemnetd")
+       | ABSOLUTEX ->
+         let pch = cpu.data in
+         let pcl = cpu.pcl + cpu.x in
+         let address = (pch lsl 8) lor (pcl land 0xFF) in
+         let pc = cpu.pc + 1 in
+         (match cpu.ir.inst with
+          | STA
+          | LDA
+          | LDY
+          | AND
+          | ORA
+          | EOR
+          | ADC
+          | SBC
+          | ASL
+          | LSR
+          | ROR
+          | INC
+          | ROL
+          | DEC
+          | CMP -> { cpu with address; pch; pcl; pc; rw = true; cycle = 4 }
+          | _ -> failwith "ABSOLUTEX Cycle 3 Not implemnetd")
+       | ABSOLUTEY ->
+         let pch = cpu.data in
+         let pcl = cpu.pcl + cpu.y in
+         let address = (pch lsl 8) lor (pcl land 0xFF) in
+         let pc = cpu.pc + 1 in
+         (match cpu.ir.inst with
+          | STA | LDA | LDX | AND | ORA | EOR | ADC | SBC | CMP ->
+            { cpu with address; pch; pcl; pc; rw = true; cycle = 4 }
+          | _ -> failwith "ABSOLUTEX Cycle 3 Not implemnetd")
        | _ -> failwith "Addressing Not implemented")
     | 4 ->
       (match cpu.ir.mode with
@@ -1042,6 +1206,134 @@ module M = struct
           | ASL | LSR | ROR | ROL | INC | DEC ->
             { cpu with data = cpu.data; rw = false; cycle = 5 }
           | _ -> failwith "Not implemened")
+       | ABSOLUTEX ->
+         if cpu.pcl land 0x0100 = 0x100
+         then (
+           (* Stdio.printf "%04X %02X %02X\n" cpu.address cpu.pch cpu.pcl; *)
+           let address = (cpu.address + 0x0100) land 0xFFFF in
+           (* Stdio.printf "%04X %02X %02X -> %04X\n" cpu.address cpu.pch cpu.pcl address; *)
+           match cpu.ir.inst with
+           | STA -> { cpu with address; data = cpu.a; rw = false; cycle = 5 }
+           | LDA
+           | LDY
+           | AND
+           | ORA
+           | EOR
+           | ADC
+           | SBC
+           | ASL
+           | LSR
+           | ROR
+           | INC
+           | ROL
+           | DEC
+           | CMP -> { cpu with address; rw = true; cycle = 5 }
+           | _ -> failwith "ABSOLUTEX Cycle 4 Not implemnetd")
+         else (
+           match cpu.ir.inst with
+           | LDA ->
+             let data = cpu.data in
+             { cpu with
+               a = data
+             ; sr = set_nz cpu.sr data
+             ; address = cpu.pc
+             ; rw = true
+             ; cycle = 1
+             }
+           | LDY ->
+             let data = cpu.data in
+             { cpu with
+               y = data
+             ; sr = set_nz cpu.sr data
+             ; address = cpu.pc
+             ; rw = true
+             ; cycle = 1
+             }
+           | EOR ->
+             let data = cpu.data in
+             let a = cpu.a lxor data in
+             { cpu with a; sr = set_nz cpu.sr a; address = cpu.pc; rw = true; cycle = 1 }
+           | AND ->
+             let data = cpu.data in
+             let a = cpu.a land data in
+             { cpu with a; sr = set_nz cpu.sr a; address = cpu.pc; rw = true; cycle = 1 }
+           | ORA ->
+             let data = cpu.data in
+             let a = cpu.a lor data in
+             { cpu with a; sr = set_nz cpu.sr a; address = cpu.pc; rw = true; cycle = 1 }
+           | ADC ->
+             let data = cpu.data in
+             let a, sr = inst_adc cpu.a data cpu.sr in
+             { cpu with a; sr; address = cpu.pc; rw = true; cycle = 1 }
+           | SBC ->
+             let data = cpu.data in
+             let a, sr = inst_sbc cpu.a data cpu.sr in
+             { cpu with a; sr; address = cpu.pc; rw = true; cycle = 1 }
+           | CMP ->
+             let data = cpu.data in
+             let _, sr = inst_cmp cpu.a data cpu.sr in
+             { cpu with sr; address = cpu.pc; rw = true; cycle = 1 }
+           | STA -> { cpu with data = cpu.a; rw = false; cycle = 5 }
+           | ASL | LSR | ROR | ROL | INC | DEC ->
+             { cpu with data = cpu.data; rw = false; cycle = 5 }
+           | _ -> failwith "Not implemened")
+       | ABSOLUTEY ->
+         if cpu.pcl land 0x0100 = 0x100
+         then (
+           (* Stdio.printf "%04X %02X %02X\n" cpu.address cpu.pch cpu.pcl; *)
+           let address = (cpu.address + 0x0100) land 0xFFFF in
+           (* Stdio.printf "%04X %02X %02X -> %04X\n" cpu.address cpu.pch cpu.pcl address; *)
+           match cpu.ir.inst with
+           | STA -> { cpu with address; data = cpu.a; rw = false; cycle = 5 }
+           | LDA | LDX | AND | ORA | EOR | ADC | SBC | CMP ->
+             { cpu with address; rw = true; cycle = 5 }
+           | _ -> failwith "ABSOLUTEY Cycle 4 Not implemnetd")
+         else (
+           match cpu.ir.inst with
+           | LDA ->
+             let data = cpu.data in
+             { cpu with
+               a = data
+             ; sr = set_nz cpu.sr data
+             ; address = cpu.pc
+             ; rw = true
+             ; cycle = 1
+             }
+           | LDX ->
+             let data = cpu.data in
+             { cpu with
+               x = data
+             ; sr = set_nz cpu.sr data
+             ; address = cpu.pc
+             ; rw = true
+             ; cycle = 1
+             }
+           | EOR ->
+             let data = cpu.data in
+             let a = cpu.a lxor data in
+             { cpu with a; sr = set_nz cpu.sr a; address = cpu.pc; rw = true; cycle = 1 }
+           | AND ->
+             let data = cpu.data in
+             let a = cpu.a land data in
+             { cpu with a; sr = set_nz cpu.sr a; address = cpu.pc; rw = true; cycle = 1 }
+           | ORA ->
+             let data = cpu.data in
+             let a = cpu.a lor data in
+             { cpu with a; sr = set_nz cpu.sr a; address = cpu.pc; rw = true; cycle = 1 }
+           | ADC ->
+             let data = cpu.data in
+             let a, sr = inst_adc cpu.a data cpu.sr in
+             { cpu with a; sr; address = cpu.pc; rw = true; cycle = 1 }
+           | SBC ->
+             let data = cpu.data in
+             let a, sr = inst_sbc cpu.a data cpu.sr in
+             { cpu with a; sr; address = cpu.pc; rw = true; cycle = 1 }
+           | CMP ->
+             let data = cpu.data in
+             let _, sr = inst_cmp cpu.a data cpu.sr in
+             { cpu with sr; address = cpu.pc; rw = true; cycle = 1 }
+           | STA -> { cpu with data = cpu.a; rw = false; cycle = 5 }
+           | _ -> failwith "Not implemened")
        | _ -> failwith "Addressing not implemented")
     | 5 ->
       (match cpu.ir.mode with
@@ -1074,6 +1366,104 @@ module M = struct
            | _ -> failwith "Inst not implemented"
          in
          { cpu with data; sr; rw = false; cycle = 6 }
+       | ABSOLUTEX ->
+         (match cpu.ir.inst with
+          | LDA ->
+            let data = cpu.data in
+            { cpu with
+              a = data
+            ; sr = set_nz cpu.sr data
+            ; address = cpu.pc
+            ; rw = true
+            ; cycle = 1
+            }
+          | LDY ->
+            let data = cpu.data in
+            { cpu with
+              y = data
+            ; sr = set_nz cpu.sr data
+            ; address = cpu.pc
+            ; rw = true
+            ; cycle = 1
+            }
+          | EOR ->
+            let data = cpu.data in
+            let a = cpu.a lxor data in
+            { cpu with a; sr = set_nz cpu.sr a; address = cpu.pc; rw = true; cycle = 1 }
+          | AND ->
+            let data = cpu.data in
+            let a = cpu.a land data in
+            { cpu with a; sr = set_nz cpu.sr a; address = cpu.pc; rw = true; cycle = 1 }
+          | ORA ->
+            let data = cpu.data in
+            let a = cpu.a lor data in
+            { cpu with a; sr = set_nz cpu.sr a; address = cpu.pc; rw = true; cycle = 1 }
+          | ADC ->
+            let data = cpu.data in
+            let a, sr = inst_adc cpu.a data cpu.sr in
+            { cpu with a; sr; address = cpu.pc; rw = true; cycle = 1 }
+          | SBC ->
+            let data = cpu.data in
+            let a, sr = inst_sbc cpu.a data cpu.sr in
+            { cpu with a; sr; address = cpu.pc; rw = true; cycle = 1 }
+          | CMP ->
+            let data = cpu.data in
+            let _, sr = inst_cmp cpu.a data cpu.sr in
+            { cpu with sr; address = cpu.pc; rw = true; cycle = 1 }
+          | STA ->
+            let data = cpu.a in
+            { cpu with data; address = cpu.pc; rw = true; cycle = 1 }
+          | ASL | LSR | ROR | ROL | INC | DEC ->
+            { cpu with data = cpu.data; rw = false; cycle = 6 }
+          | _ -> failwith "Not implemened")
+       | ABSOLUTEY ->
+         (match cpu.ir.inst with
+          | LDA ->
+            let data = cpu.data in
+            { cpu with
+              a = data
+            ; sr = set_nz cpu.sr data
+            ; address = cpu.pc
+            ; rw = true
+            ; cycle = 1
+            }
+          | LDX ->
+            let data = cpu.data in
+            { cpu with
+              x = data
+            ; sr = set_nz cpu.sr data
+            ; address = cpu.pc
+            ; rw = true
+            ; cycle = 1
+            }
+          | EOR ->
+            let data = cpu.data in
+            let a = cpu.a lxor data in
+            { cpu with a; sr = set_nz cpu.sr a; address = cpu.pc; rw = true; cycle = 1 }
+          | AND ->
+            let data = cpu.data in
+            let a = cpu.a land data in
+            { cpu with a; sr = set_nz cpu.sr a; address = cpu.pc; rw = true; cycle = 1 }
+          | ORA ->
+            let data = cpu.data in
+            let a = cpu.a lor data in
+            { cpu with a; sr = set_nz cpu.sr a; address = cpu.pc; rw = true; cycle = 1 }
+          | ADC ->
+            let data = cpu.data in
+            let a, sr = inst_adc cpu.a data cpu.sr in
+            { cpu with a; sr; address = cpu.pc; rw = true; cycle = 1 }
+          | SBC ->
+            let data = cpu.data in
+            let a, sr = inst_sbc cpu.a data cpu.sr in
+            { cpu with a; sr; address = cpu.pc; rw = true; cycle = 1 }
+          | CMP ->
+            let data = cpu.data in
+            let _, sr = inst_cmp cpu.a data cpu.sr in
+            { cpu with sr; address = cpu.pc; rw = true; cycle = 1 }
+          | STA ->
+            let data = cpu.a in
+            { cpu with data; address = cpu.pc; rw = true; cycle = 1 }
+          | _ -> failwith "Not implemened")
        | _ -> failwith "Addressing not implemented")
     | 6 ->
       (match cpu.ir.mode with
@@ -1087,8 +1477,27 @@ module M = struct
           | ASL | LSR | ROR | ROL | INC | DEC ->
             { cpu with address = cpu.pc; rw = true; cycle = 1 }
           | _ -> failwith "Inst not implemented")
+       | ABSOLUTEX ->
+         let data, sr =
+           match cpu.ir.inst with
+           | ASL -> inst_asl cpu.data cpu.sr
+           | LSR -> inst_lsr cpu.data cpu.sr
+           | ROR -> inst_ror cpu.data cpu.sr
+           | ROL -> inst_rol cpu.data cpu.sr
+           | INC -> inst_inc cpu.data cpu.sr
+           | DEC -> inst_dec cpu.data cpu.sr
+           | _ -> failwith "Inst not implemented"
+         in
+         { cpu with data; sr; rw = false; cycle = 7 }
        | _ -> failwith "Addressing not implemented")
-    | 7 -> failwith "Cycle 7 Unimplemented"
+    | 7 ->
+      (match cpu.ir.mode with
+       | ABSOLUTEX ->
+         (match cpu.ir.inst with
+          | ASL | LSR | ROR | ROL | INC | DEC ->
+            { cpu with address = cpu.pc; rw = true; cycle = 1 }
+          | _ -> failwith "Inst not implemented")
+       | _ -> failwith "Addressing not implemented")
     | _ -> failwith "Cycle Unimplemented"
   ;;
 end
