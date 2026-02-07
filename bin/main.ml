@@ -53,7 +53,7 @@ let dump_execution (computer : M.t) =
 let dump_executions = List.iter ~f:dump_execution
 
 (* let dump_last_execution executions = List.hd_exn executions |> dump_execution *)
-let cycles = 11 * 2
+let cycles = 12 * 2
 
 (*
   # 1000
@@ -69,7 +69,7 @@ let start_address = 0x1000
 let mem = computer.banks
 
 (* let pgm1 = [ 0xA9; 0x10; 0x4C; 0x00; 0xC0 ] *)
-let pgm1 = [ 0xA9; 0x01; 0xA2; 0x02; 0xA0; 0x03; 0x95; 0x44; 0xEA ]
+let pgm1 = [ 0xA9; 0x01; 0xA2; 0x02; 0xA0; 0x03; 0xBD; 0x44; 0x69; 0xEA ]
 let () = load_pgm mem start_address pgm1
 let pgm2 = [ 0xA9; 0x20 ]
 let () = load_pgm mem 0xC000 pgm2
