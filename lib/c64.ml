@@ -6667,3 +6667,603 @@ let%expect_test "testing SBC Binary IMMEDIATE (0xE9) Overflow" =
   [%expect
     {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x7F x: 0x02 y: 0x03 sp: 0xFD sr: nV-bdizC pc: 0x1002 inst: SBC #%02X |}]
 ;;
+
+let%expect_test "testing LDA INDEXEDINDIRECT (0xA1) non-zero positive" =
+  let cycles = 6 in
+  let pgm = [ 0xA1; 0x44 ] in
+  let computer = init_test_computer pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
+    }
+  in
+  computer.banks.(0x46) <- 0x10;
+  computer.banks.(0x47) <- 0xC0;
+  computer.banks.(0xC010) <- 0x04;
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x04 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: LDA ($%02X,X) |}]
+;;
+
+let%expect_test "testing LDA INDEXEDINDIRECT (0xA1) non-zero negative" =
+  let cycles = 6 in
+  let pgm = [ 0xA1; 0x44 ] in
+  let computer = init_test_computer pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
+    }
+  in
+  computer.banks.(0x46) <- 0x10;
+  computer.banks.(0x47) <- 0xC0;
+  computer.banks.(0xC010) <- 0x84;
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x84 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1002 inst: LDA ($%02X,X) |}]
+;;
+
+let%expect_test "testing LDA INDEXEDINDIRECT (0xA1) zero" =
+  let cycles = 6 in
+  let pgm = [ 0xA1; 0x44 ] in
+  let computer = init_test_computer pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
+    }
+  in
+  computer.banks.(0x46) <- 0x10;
+  computer.banks.(0x47) <- 0xC0;
+  computer.banks.(0xC010) <- 0x00;
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x00 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZc pc: 0x1002 inst: LDA ($%02X,X) |}]
+;;
+
+let%expect_test "testing LDA INDEXEDINDIRECT (0xA1) End of page" =
+  let cycles = 6 in
+  let pgm = [ 0xA1; 0xFD ] in
+  let computer = init_test_computer pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
+    }
+  in
+  computer.banks.(0xFF) <- 0x10;
+  computer.banks.(0x00) <- 0xC0;
+  computer.banks.(0xC010) <- 0x04;
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x04 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: LDA ($%02X,X) |}]
+;;
+
+let%expect_test "testing EOR INDEXEDINDIRECT (0x41) non-zero positive" =
+  let cycles = 6 in
+  let pgm = [ 0x41; 0x44 ] in
+  let computer = init_test_computer pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
+    }
+  in
+  computer.banks.(0x46) <- 0x10;
+  computer.banks.(0x47) <- 0xC0;
+  computer.banks.(0xC010) <- 0x04;
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x05 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: EOR ($%02X,X) |}]
+;;
+
+let%expect_test "testing EOR INDEXEDINDIRECT (0x41) non-zero negative" =
+  let cycles = 6 in
+  let pgm = [ 0x41; 0x44 ] in
+  let computer = init_test_computer pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
+    }
+  in
+  computer.banks.(0x46) <- 0x10;
+  computer.banks.(0x47) <- 0xC0;
+  computer.banks.(0xC010) <- 0x84;
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x85 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1002 inst: EOR ($%02X,X) |}]
+;;
+
+let%expect_test "testing EOR INDEXEDINDIRECT (0x41) zero" =
+  let cycles = 6 in
+  let pgm = [ 0x41; 0x44 ] in
+  let computer = init_test_computer pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
+    }
+  in
+  computer.banks.(0x46) <- 0x10;
+  computer.banks.(0x47) <- 0xC0;
+  computer.banks.(0xC010) <- 0x01;
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x00 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZc pc: 0x1002 inst: EOR ($%02X,X) |}]
+;;
+
+let%expect_test "testing EOR INDEXEDINDIRECT (0x41) End of page" =
+  let cycles = 6 in
+  let pgm = [ 0x41; 0xFD ] in
+  let computer = init_test_computer pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
+    }
+  in
+  computer.banks.(0xFF) <- 0x10;
+  computer.banks.(0x00) <- 0xC0;
+  computer.banks.(0xC010) <- 0x04;
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x05 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: EOR ($%02X,X) |}]
+;;
+
+let%expect_test "testing AND INDEXEDINDIRECT (0x21) non-zero positive" =
+  let cycles = 6 in
+  let pgm = [ 0x21; 0x44 ] in
+  let computer = init_test_computer pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
+    }
+  in
+  computer.banks.(0x46) <- 0x10;
+  computer.banks.(0x47) <- 0xC0;
+  computer.banks.(0xC010) <- 0x05;
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: AND ($%02X,X) |}]
+;;
+
+let%expect_test "testing AND INDEXEDINDIRECT (0x21) non-zero negative" =
+  let cycles = 6 in
+  let pgm = [ 0x21; 0x44 ] in
+  let computer = init_test_computer pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x81; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
+    }
+  in
+  computer.banks.(0x46) <- 0x10;
+  computer.banks.(0x47) <- 0xC0;
+  computer.banks.(0xC010) <- 0x84;
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x80 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1002 inst: AND ($%02X,X) |}]
+;;
+
+let%expect_test "testing AND INDEXEDINDIRECT (0x21) zero" =
+  let cycles = 6 in
+  let pgm = [ 0x21; 0x44 ] in
+  let computer = init_test_computer pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
+    }
+  in
+  computer.banks.(0x46) <- 0x10;
+  computer.banks.(0x47) <- 0xC0;
+  computer.banks.(0xC010) <- 0x02;
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x00 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZc pc: 0x1002 inst: AND ($%02X,X) |}]
+;;
+
+let%expect_test "testing AND INDEXEDINDIRECT (0x21) End of page" =
+  let cycles = 6 in
+  let pgm = [ 0x21; 0xFD ] in
+  let computer = init_test_computer pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
+    }
+  in
+  computer.banks.(0xFF) <- 0x10;
+  computer.banks.(0x00) <- 0xC0;
+  computer.banks.(0xC010) <- 0x05;
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: AND ($%02X,X) |}]
+;;
+
+let%expect_test "testing ORA INDEXEDINDIRECT (0x01) non-zero positive" =
+  let cycles = 6 in
+  let pgm = [ 0x01; 0x44 ] in
+  let computer = init_test_computer pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
+    }
+  in
+  computer.banks.(0x46) <- 0x10;
+  computer.banks.(0x47) <- 0xC0;
+  computer.banks.(0xC010) <- 0x05;
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x05 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: ORA ($%02X,X) |}]
+;;
+
+let%expect_test "testing ORA INDEXEDINDIRECT (0x01) non-zero negative" =
+  let cycles = 6 in
+  let pgm = [ 0x01; 0x44 ] in
+  let computer = init_test_computer pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x80; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
+    }
+  in
+  computer.banks.(0x46) <- 0x10;
+  computer.banks.(0x47) <- 0xC0;
+  computer.banks.(0xC010) <- 0x04;
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x84 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1002 inst: ORA ($%02X,X) |}]
+;;
+
+let%expect_test "testing ORA INDEXEDINDIRECT (0x01) zero" =
+  let cycles = 6 in
+  let pgm = [ 0x01; 0x44 ] in
+  let computer = init_test_computer pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x00; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
+    }
+  in
+  computer.banks.(0x46) <- 0x10;
+  computer.banks.(0x47) <- 0xC0;
+  computer.banks.(0xC010) <- 0x00;
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x00 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZc pc: 0x1002 inst: ORA ($%02X,X) |}]
+;;
+
+let%expect_test "testing ORA INDEXEDINDIRECT (0x01) End of page" =
+  let cycles = 6 in
+  let pgm = [ 0x01; 0xFD ] in
+  let computer = init_test_computer pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
+    }
+  in
+  computer.banks.(0xFF) <- 0x10;
+  computer.banks.(0x00) <- 0xC0;
+  computer.banks.(0xC010) <- 0x05;
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x05 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: ORA ($%02X,X) |}]
+;;
+
+let%expect_test "testing ADC INDEXEDINDIRECT (0x61) non-zero positive" =
+  let cycles = 6 in
+  let pgm = [ 0x61; 0x44 ] in
+  let computer = init_test_computer pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
+    }
+  in
+  computer.banks.(0x46) <- 0x10;
+  computer.banks.(0x47) <- 0xC0;
+  computer.banks.(0xC010) <- 0x05;
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x06 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: ADC ($%02X,X) |}]
+;;
+
+let%expect_test "testing ADC INDEXEDINDIRECT (0x61) Incoming carry" =
+  let cycles = 6 in
+  let pgm = [ 0x61; 0x44 ] in
+  let computer = init_test_computer pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x01 }
+    }
+  in
+  computer.banks.(0x46) <- 0x10;
+  computer.banks.(0x47) <- 0xC0;
+  computer.banks.(0xC010) <- 0x05;
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x07 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: ADC ($%02X,X) |}]
+;;
+
+let%expect_test "testing ADC INDEXEDINDIRECT (0x61) Generating Carry" =
+  let cycles = 6 in
+  let pgm = [ 0x61; 0x44 ] in
+  let computer = init_test_computer pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
+    }
+  in
+  computer.banks.(0x46) <- 0x10;
+  computer.banks.(0x47) <- 0xC0;
+  computer.banks.(0xC010) <- 0xFF;
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x00 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZC pc: 0x1002 inst: ADC ($%02X,X) |}]
+;;
+
+let%expect_test "testing ADC INDEXEDINDIRECT (0x61) Pos+Pos=Neg" =
+  let cycles = 6 in
+  let pgm = [ 0x61; 0x44 ] in
+  let computer = init_test_computer pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x7F; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
+    }
+  in
+  computer.banks.(0x46) <- 0x10;
+  computer.banks.(0x47) <- 0xC0;
+  computer.banks.(0xC010) <- 0x01;
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x80 x: 0x02 y: 0x03 sp: 0xFD sr: NV-bdizc pc: 0x1002 inst: ADC ($%02X,X) |}]
+;;
+
+let%expect_test "testing ADC INDEXEDINDIRECT (0x61) Pos+Neg" =
+  let cycles = 6 in
+  let pgm = [ 0x61; 0x44 ] in
+  let computer = init_test_computer pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x7F; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
+    }
+  in
+  computer.banks.(0x46) <- 0x10;
+  computer.banks.(0x47) <- 0xC0;
+  computer.banks.(0xC010) <- 0x80;
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0xFF x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1002 inst: ADC ($%02X,X) |}]
+;;
+
+let%expect_test "testing ADC INDEXEDINDIRECT (0x61) Neg+Neg=Pos" =
+  let cycles = 6 in
+  let pgm = [ 0x61; 0x44 ] in
+  let computer = init_test_computer pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x80; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
+    }
+  in
+  computer.banks.(0x46) <- 0x10;
+  computer.banks.(0x47) <- 0xC0;
+  computer.banks.(0xC010) <- 0xFF;
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x7F x: 0x02 y: 0x03 sp: 0xFD sr: nV-bdizC pc: 0x1002 inst: ADC ($%02X,X) |}]
+;;
+
+let%expect_test "testing ADC INDEXEDINDIRECT (0x61) End of Page" =
+  let cycles = 6 in
+  let pgm = [ 0x61; 0xFD ] in
+  let computer = init_test_computer pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
+    }
+  in
+  computer.banks.(0xFF) <- 0x10;
+  computer.banks.(0x00) <- 0xC0;
+  computer.banks.(0xC010) <- 0x05;
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x06 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: ADC ($%02X,X) |}]
+;;
+
+let%expect_test "testing STA INDEXEDINDIRECT (0x81)" =
+  let cycles = 6 in
+  let pgm = [ 0x81; 0x44 ] in
+  let computer = init_test_computer pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
+    }
+  in
+  computer.banks.(0x46) <- 0x10;
+  computer.banks.(0x47) <- 0xC0;
+  computer.banks.(0xC010) <- 0xEA;
+  let executions = execute_cycles cycles computer in
+  let last_computer = List.last_exn executions in
+  dump_last_execution executions;
+  printf "Mem: 0x%04X : 0x%02X" 0xC010 last_computer.banks.(0xC010);
+  [%expect
+    {|
+    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: STA ($%02X,X)
+
+    Mem: 0xC010 : 0x01
+    |}]
+;;
+
+let%expect_test "testing CMP INDEXEDINDIRECT (0xC1) Equality" =
+  let cycles = 6 in
+  let pgm = [ 0xC1; 0x44 ] in
+  let computer = init_test_computer pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x42; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
+    }
+  in
+  computer.banks.(0x46) <- 0x10;
+  computer.banks.(0x47) <- 0xC0;
+  computer.banks.(0xC010) <- 0x42;
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x42 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZC pc: 0x1002 inst: CMP ($%02X,X) |}]
+;;
+
+let%expect_test "testing CMP INDEXEDINDIRECT (0xC1) Greater Than" =
+  let cycles = 6 in
+  let pgm = [ 0xC1; 0x44 ] in
+  let computer = init_test_computer pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0xFF; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
+    }
+  in
+  computer.banks.(0x46) <- 0x10;
+  computer.banks.(0x47) <- 0xC0;
+  computer.banks.(0xC010) <- 0x01;
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0xFF x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizC pc: 0x1002 inst: CMP ($%02X,X) |}]
+;;
+
+let%expect_test "testing CMP INDEXEDINDIRECT (0xC1) Less Than" =
+  let cycles = 6 in
+  let pgm = [ 0xC1; 0x44 ] in
+  let computer = init_test_computer pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x02; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
+    }
+  in
+  computer.banks.(0x46) <- 0x10;
+  computer.banks.(0x47) <- 0xC0;
+  computer.banks.(0xC010) <- 0x03;
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x02 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1002 inst: CMP ($%02X,X) |}]
+;;
+
+let%expect_test "testing CMP INDEXEDINDIRECT (0xC1) End of Page" =
+  let cycles = 6 in
+  let pgm = [ 0xC1; 0xFD ] in
+  let computer = init_test_computer pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x42; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
+    }
+  in
+  computer.banks.(0xFF) <- 0x10;
+  computer.banks.(0x00) <- 0xC0;
+  computer.banks.(0xC010) <- 0x42;
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x42 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZC pc: 0x1002 inst: CMP ($%02X,X) |}]
+;;
+
+let%expect_test "testing SBC INDEXEDINDIRECT (0xE1) No Borrow" =
+  let cycles = 6 in
+  let pgm = [ 0xE1; 0x44 ] in
+  let computer = init_test_computer pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x05; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x01 }
+    }
+  in
+  computer.banks.(0x46) <- 0x10;
+  computer.banks.(0x47) <- 0xC0;
+  computer.banks.(0xC010) <- 0x02;
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x03 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizC pc: 0x1002 inst: SBC ($%02X,X) |}]
+;;
+
+let%expect_test "testing SBC INDEXEDINDIRECT (0xE1) With  Borrow" =
+  let cycles = 6 in
+  let pgm = [ 0xE1; 0x44 ] in
+  let computer = init_test_computer pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x05; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
+    }
+  in
+  computer.banks.(0x46) <- 0x10;
+  computer.banks.(0x47) <- 0xC0;
+  computer.banks.(0xC010) <- 0x02;
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x02 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizC pc: 0x1002 inst: SBC ($%02X,X) |}]
+;;
+
+let%expect_test "testing SBC INDEXEDINDIRECT (0xE1) Underflow" =
+  let cycles = 6 in
+  let pgm = [ 0xE1; 0x44 ] in
+  let computer = init_test_computer pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x01 }
+    }
+  in
+  computer.banks.(0x46) <- 0x10;
+  computer.banks.(0x47) <- 0xC0;
+  computer.banks.(0xC010) <- 0x02;
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0xFF x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1002 inst: SBC ($%02X,X) |}]
+;;
+
+let%expect_test "testing SBC INDEXEDINDIRECT (0xE1) Overflow" =
+  let cycles = 6 in
+  let pgm = [ 0xE1; 0x44 ] in
+  let computer = init_test_computer pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x80; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x01 }
+    }
+  in
+  computer.banks.(0x46) <- 0x10;
+  computer.banks.(0x47) <- 0xC0;
+  computer.banks.(0xC010) <- 0x01;
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x7F x: 0x02 y: 0x03 sp: 0xFD sr: nV-bdizC pc: 0x1002 inst: SBC ($%02X,X) |}]
+;;
+
+let%expect_test "testing SBC INDEXEDINDIRECT (0xE1) End of Page" =
+  let cycles = 6 in
+  let pgm = [ 0xE1; 0xFD ] in
+  let computer = init_test_computer pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x05; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x01 }
+    }
+  in
+  computer.banks.(0xFF) <- 0x10;
+  computer.banks.(0x00) <- 0xC0;
+  computer.banks.(0xC010) <- 0x02;
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x03 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizC pc: 0x1002 inst: SBC ($%02X,X) |}]
+;;
