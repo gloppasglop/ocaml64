@@ -17,12 +17,25 @@ let load_pgm mem offset pgm =
     mem.(offset + i) <- data)
 ;;
 
-let rec execute_cycles i acc (computer : Ocaml64.C64.M.t) =
-  if i = 0
-  then acc |> List.rev
-  else (
-    let computer' = M.fetch_decode_execute computer in
-    execute_cycles (i - 1) (computer :: acc) computer')
+(* let rec execute_cycles i acc (computer : Ocaml64.C64.M.t) = *)
+(* if i = 0 *)
+(* then acc |> List.rev *)
+(* else ( *)
+(* let computer' = M.fetch_decode_execute computer in *)
+(* execute_cycles (i - 1) (computer :: acc) computer') *)
+(* ;; *)
+
+let execute_cycles cycles computer =
+  let half_cycles = 2 * cycles in
+  let rec aux n acc computer =
+    if n = 0
+    then Some computer :: acc
+    else (
+      match M.fetch_decode_execute computer with
+      | None -> acc
+      | Some computer' -> aux (n - 1) (Some computer :: acc) computer')
+  in
+  aux half_cycles [] computer |> List.rev
 ;;
 
 let _init_test_computer mem pgm =
@@ -42,18 +55,29 @@ let init_test_computer =
   { computer with cpu = { computer.cpu with pc = address; address; data }; bus }
 ;;
 
-let dump_execution (computer : M.t) =
-  printf
-    "ab: 0x%04X db: 0x%02X %s\n"
-    computer.bus.address
-    computer.bus.data
-    (Ocaml64.C6510.M.cpu_to_string computer.cpu)
+(* let dump_execution (computer : M.t) = *)
+(* printf *)
+(* "ab: 0x%04X db: 0x%02X %s\n" *)
+(* computer.bus.address *)
+(* computer.bus.data *)
+(* (Ocaml64.C6510.M.cpu_to_string computer.cpu) *)
+(* ;; *)
+
+let dump_execution (computer : M.t option) =
+  match computer with
+  | None -> printf "jjjjjj"
+  | Some computer ->
+    printf
+      "ab: 0x%04X db: 0x%02X %s\n"
+      computer.bus.address
+      computer.bus.data
+      (Ocaml64.C6510.M.cpu_to_string computer.cpu)
 ;;
 
 let dump_executions = List.iter ~f:dump_execution
 
 (* let dump_last_execution executions = List.hd_exn executions |> dump_execution *)
-let cycles = 8 * 2
+let cycles = 18 * 2
 
 (*
   # 1000
@@ -67,7 +91,7 @@ let cycles = 8 * 2
 let computer = init_test_computer
 let start_address = 0x1000
 let mem = computer.banks
-let pgm1 = [ 0xA9; 0x10; 0xEA ]
+let pgm1 = [ 0xA9; 0x10 ]
 
 (* let pgm1 = [ 0xA9; 0x01; 0xA2; 0x02; 0xA0; 0x03; 0x6C; 0x44; 0x69; 0xEA ] *)
 (* let pgm1 = [ 0x00; 0xEA ] *)
@@ -90,6 +114,6 @@ let computer =
 
 let () =
   printf "%s\n" (cpu_to_string computer.cpu);
-  let executions = execute_cycles cycles [] computer in
+  let executions = execute_cycles cycles computer in
   dump_executions executions
 ;;
