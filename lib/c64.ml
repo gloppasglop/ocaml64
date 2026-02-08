@@ -138,9 +138,7 @@ let execute_cycles cycles computer =
   aux half_cycles [] computer
 ;;
 
-let program_start = 0x1000
-
-let init_test_computer pgm =
+let init_test_computer program_start pgm =
   let mem = Array.create ~len:65536 0xFF in
   let address = program_start in
   let data = List.hd_exn pgm in
@@ -167,7 +165,7 @@ let%expect_test "testing NOP IMPLIED (0xEA)" =
   (* 2 cycles , 1 byte *)
   let cycles = 2 in
   let pgm = [ 0xEA ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   (* printf "%s" (C6510.M.cpu_to_string computer.cpu); *)
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
@@ -179,7 +177,7 @@ let%expect_test "testing LDA IMMEDIATE (0xA9) non-zero positive" =
   (* 2 cycles , 1 byte *)
   let cycles = 2 in
   let pgm = [ 0xA9; 0x01 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   (* printf "%s" (Cpu.cpu_to_string computer.cpu); *)
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
@@ -191,7 +189,7 @@ let%expect_test "testing LDA IMMEDIATE (0xA9) non-zero negative" =
   (* 2 cycles , 1 byte *)
   let cycles = 2 in
   let pgm = [ 0xA9; 0x81 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   (* printf "%s" (Cpu.cpu_to_string computer.cpu); *)
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
@@ -203,7 +201,7 @@ let%expect_test "testing LDA IMMEDIATE (0xA9) zero" =
   (* 2 cycles , 1 byte *)
   let cycles = 2 in
   let pgm = [ 0xA9; 0x00 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer = { computer with cpu = { computer.cpu with a = 0x01; sr = 0x00 } } in
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
@@ -215,7 +213,7 @@ let%expect_test "testing LDX IMMEDIATE (0xA2) non-zero positive" =
   (* 2 cycles , 1 byte *)
   let cycles = 2 in
   let pgm = [ 0xA2; 0x01 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -226,7 +224,7 @@ let%expect_test "testing LDX IMMEDIATE (0xA2) non-zero negative" =
   (* 2 cycles , 1 byte *)
   let cycles = 2 in
   let pgm = [ 0xA2; 0x81 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -237,7 +235,7 @@ let%expect_test "testing LDX IMMEDIATE (0xA2) zero" =
   (* 2 cycles , 1 byte *)
   let cycles = 2 in
   let pgm = [ 0xA2; 0x00 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer = { computer with cpu = { computer.cpu with x = 0x01; sr = 0x00 } } in
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
@@ -249,7 +247,7 @@ let%expect_test "testing LDY IMMEDIATE (0xA0) non-zero positive" =
   (* 2 cycles , 1 byte *)
   let cycles = 2 in
   let pgm = [ 0xA0; 0x01 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -260,7 +258,7 @@ let%expect_test "testing LDY IMMEDIATE (0xA0) non-zero negative" =
   (* 2 cycles , 1 byte *)
   let cycles = 2 in
   let pgm = [ 0xA0; 0x81 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -271,7 +269,7 @@ let%expect_test "testing LDY IMMEDIATE (0xA0) zero" =
   (* 2 cycles , 1 byte *)
   let cycles = 2 in
   let pgm = [ 0xA0; 0x00 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer = { computer with cpu = { computer.cpu with y = 0x01; sr = 0x00 } } in
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
@@ -284,7 +282,7 @@ let%expect_test "testing LDA ZEROPAGE (0xA5) non-zero positive" =
   let cycles = 3 in
   (* LDA $44 *)
   let pgm = [ 0xA5; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   computer.banks.(0x044) <- 0x01;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
@@ -297,7 +295,7 @@ let%expect_test "testing LDA ZEROPAGE (0xA5) non-zero negative" =
   let cycles = 3 in
   (* LDA $44 *)
   let pgm = [ 0xA5; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   computer.banks.(0x044) <- 0x80;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
@@ -310,7 +308,7 @@ let%expect_test "testing LDA ZEROPAGE (0xA5) zero" =
   let cycles = 3 in
   (* LDA $44 *)
   let pgm = [ 0xA5; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   computer.banks.(0x044) <- 0x00;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
@@ -323,7 +321,7 @@ let%expect_test "testing LDX ZEROPAGE (0xA6) non-zero positive" =
   let cycles = 3 in
   (* LDA $44 *)
   let pgm = [ 0xA6; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   computer.banks.(0x044) <- 0x01;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
@@ -336,7 +334,7 @@ let%expect_test "testing LDX ZEROPAGE (0xA6) non-zero negative" =
   let cycles = 3 in
   (* LDA $44 *)
   let pgm = [ 0xA6; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   computer.banks.(0x044) <- 0x80;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
@@ -349,7 +347,7 @@ let%expect_test "testing LDX ZEROPAGE (0xA6) zero" =
   let cycles = 3 in
   (* LDA $44 *)
   let pgm = [ 0xA6; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   computer.banks.(0x044) <- 0x00;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
@@ -362,7 +360,7 @@ let%expect_test "testing LDY ZEROPAGE (0xA4) non-zero positive" =
   let cycles = 3 in
   (* LDA $44 *)
   let pgm = [ 0xA4; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   computer.banks.(0x044) <- 0x01;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
@@ -375,7 +373,7 @@ let%expect_test "testing LDY ZEROPAGE (0xA4) non-zero negative" =
   let cycles = 3 in
   (* LDA $44 *)
   let pgm = [ 0xA4; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   computer.banks.(0x044) <- 0x80;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
@@ -388,7 +386,7 @@ let%expect_test "testing LDY ZEROPAGE (0xA4) zero" =
   let cycles = 3 in
   (* LDA $44 *)
   let pgm = [ 0xA4; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   computer.banks.(0x044) <- 0x00;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
@@ -401,7 +399,7 @@ let%expect_test "testing EOR ZEROPAGE (0x45) non-zero positive" =
   let cycles = 3 in
   (* LDA $44 *)
   let pgm = [ 0x45; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0b0000_0010; sr = 0x00 } }
   in
@@ -417,7 +415,7 @@ let%expect_test "testing EOR ZEROPAGE (0x45) non-zero negative" =
   let cycles = 3 in
   (* LDA $44 *)
   let pgm = [ 0x45; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0b0000_0010; sr = 0x00 } }
   in
@@ -433,7 +431,7 @@ let%expect_test "testing EOR ZEROPAGE (0x45) zero" =
   let cycles = 3 in
   (* LDA $44 *)
   let pgm = [ 0x45; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0b0000_0010; sr = 0x00 } }
   in
@@ -449,7 +447,7 @@ let%expect_test "testing AND ZEROPAGE (0x25) non-zero positive" =
   let cycles = 3 in
   (* LDA $44 *)
   let pgm = [ 0x25; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0b0000_0010; sr = 0x00 } }
   in
@@ -465,7 +463,7 @@ let%expect_test "testing AND ZEROPAGE (0x25) non-zero negative" =
   let cycles = 3 in
   (* LDA $44 *)
   let pgm = [ 0x25; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0b1000_0010; sr = 0x00 } }
   in
@@ -481,7 +479,7 @@ let%expect_test "testing AND ZEROPAGE (0x25) zero" =
   let cycles = 3 in
   (* LDA $44 *)
   let pgm = [ 0x25; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0b0000_0001; sr = 0x00 } }
   in
@@ -497,7 +495,7 @@ let%expect_test "testing ORA ZEROPAGE (0x05) non-zero positive" =
   let cycles = 3 in
   (* LDA $44 *)
   let pgm = [ 0x05; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0b0000_0010; sr = 0x00 } }
   in
@@ -513,7 +511,7 @@ let%expect_test "testing ORA ZEROPAGE (0x05) non-zero negative" =
   let cycles = 3 in
   (* LDA $44 *)
   let pgm = [ 0x05; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0b1000_0010; sr = 0x00 } }
   in
@@ -529,7 +527,7 @@ let%expect_test "testing ORA ZEROPAGE (0x05) zero" =
   let cycles = 3 in
   (* LDA $44 *)
   let pgm = [ 0x05; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0b0000_0000; sr = 0x02 } }
   in
@@ -545,7 +543,7 @@ let%expect_test "testing ADC Binary ZEROPAGE (0x65) No flags" =
   let cycles = 3 in
   (* LDA $44 *)
   let pgm = [ 0x65; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer = { computer with cpu = { computer.cpu with a = 0x02; sr = 0x00 } } in
   computer.banks.(0x44) <- 0x03;
   let executions = execute_cycles cycles computer in
@@ -559,7 +557,7 @@ let%expect_test "testing ADC Binary ZEROPAGE (0x65) with incomming Carry " =
   let cycles = 3 in
   (* LDA $44 *)
   let pgm = [ 0x65; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer = { computer with cpu = { computer.cpu with a = 0x02; sr = 0x01 } } in
   computer.banks.(0x44) <- 0x03;
   let executions = execute_cycles cycles computer in
@@ -573,7 +571,7 @@ let%expect_test "testing ADC Binary ZEROPAGE (0x65) Generating Carry " =
   let cycles = 3 in
   (* LDA $44 *)
   let pgm = [ 0x65; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer = { computer with cpu = { computer.cpu with a = 0x01; sr = 0x00 } } in
   computer.banks.(0x44) <- 0xFF;
   let executions = execute_cycles cycles computer in
@@ -587,7 +585,7 @@ let%expect_test "testing ADC Binary ZEROPAGE (0x65) Pos+Pos=Neg " =
   let cycles = 3 in
   (* LDA $44 *)
   let pgm = [ 0x65; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer = { computer with cpu = { computer.cpu with a = 0x7F; sr = 0x00 } } in
   computer.banks.(0x44) <- 0x01;
   let executions = execute_cycles cycles computer in
@@ -601,7 +599,7 @@ let%expect_test "testing ADC Binary ZEROPAGE (0x65) Neg+Neg=Pos " =
   let cycles = 3 in
   (* LDA $44 *)
   let pgm = [ 0x65; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer = { computer with cpu = { computer.cpu with a = 0x80; sr = 0x80 } } in
   computer.banks.(0x44) <- 0xFF;
   let executions = execute_cycles cycles computer in
@@ -615,7 +613,7 @@ let%expect_test "testing ADC Binary ZEROPAGE (0x65) Pos+Neg " =
   let cycles = 3 in
   (* LDA $44 *)
   let pgm = [ 0x65; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer = { computer with cpu = { computer.cpu with a = 0x7F; sr = 0x00 } } in
   computer.banks.(0x44) <- 0x80;
   let executions = execute_cycles cycles computer in
@@ -629,7 +627,7 @@ let%expect_test "testing STA ZEROPAGE (0x85)" =
   let cycles = 3 in
   (* LDA $44 *)
   let pgm = [ 0x85; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer = { computer with cpu = { computer.cpu with a = 0x01; sr = 0x00 } } in
   let executions = execute_cycles cycles computer in
   let last_computer = List.last_exn executions in
@@ -648,7 +646,7 @@ let%expect_test "testing STX ZEROPAGE (0x86)" =
   let cycles = 3 in
   (* LDA $44 *)
   let pgm = [ 0x86; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x00 } }
   in
@@ -669,7 +667,7 @@ let%expect_test "testing STY ZEROPAGE (0x84)" =
   let cycles = 3 in
   (* LDA $44 *)
   let pgm = [ 0x84; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x00 } }
   in
@@ -691,7 +689,7 @@ let%expect_test "testing ASL ZEROPAGE Basic (0x06)" =
   let cycles = 5 in
   (* LDA $44 *)
   let pgm = [ 0x06; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   computer.banks.(0x44) <- 0x01;
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x00 } }
@@ -714,7 +712,7 @@ let%expect_test "testing ASL ZEROPAGE Shift Out (0x06)" =
   let cycles = 5 in
   (* LDA $44 *)
   let pgm = [ 0x06; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   computer.banks.(0x44) <- 0x80;
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x00 } }
@@ -737,7 +735,7 @@ let%expect_test "testing ASL ZEROPAGE Negative FLag  (0x06)" =
   let cycles = 5 in
   (* LDA $44 *)
   let pgm = [ 0x06; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   computer.banks.(0x44) <- 0x40;
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x00 } }
@@ -760,7 +758,7 @@ let%expect_test "testing LSR ZEROPAGE Basic (0x46)" =
   let cycles = 5 in
   (* LDA $44 *)
   let pgm = [ 0x46; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   computer.banks.(0x44) <- 0x02;
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x01 } }
@@ -783,7 +781,7 @@ let%expect_test "testing LSR ZEROPAGE Shift Into (0x46)" =
   let cycles = 5 in
   (* LDA $44 *)
   let pgm = [ 0x46; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   computer.banks.(0x44) <- 0x01;
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x00 } }
@@ -806,7 +804,7 @@ let%expect_test "testing LSR ZEROPAGE Hign Bit clear  (0x46)" =
   let cycles = 5 in
   (* LDA $44 *)
   let pgm = [ 0x46; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   computer.banks.(0x44) <- 0x80;
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x01 } }
@@ -829,7 +827,7 @@ let%expect_test "testing ROR ZEROPAGE Carry to Bit 7 (0x66)" =
   let cycles = 5 in
   (* LDA $44 *)
   let pgm = [ 0x66; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   computer.banks.(0x44) <- 0x00;
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x03 } }
@@ -852,7 +850,7 @@ let%expect_test "testing ROR ZEROPAGE Bit 0 to Carry (0x66)" =
   let cycles = 5 in
   (* LDA $44 *)
   let pgm = [ 0x66; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   computer.banks.(0x44) <- 0x01;
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x00 } }
@@ -875,7 +873,7 @@ let%expect_test "testing ROR ZEROPAGE Negative Flag (0x66)" =
   let cycles = 5 in
   (* LDA $44 *)
   let pgm = [ 0x66; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   computer.banks.(0x44) <- 0x7F;
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x01 } }
@@ -898,7 +896,7 @@ let%expect_test "testing ROL ZEROPAGE Carry to bit 0 (0x26)" =
   let cycles = 5 in
   (* LDA $44 *)
   let pgm = [ 0x26; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   computer.banks.(0x44) <- 0x00;
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x03 } }
@@ -921,7 +919,7 @@ let%expect_test "testing ROL ZEROPAGE Bit 7 to Carry (0x26)" =
   let cycles = 5 in
   (* LDA $44 *)
   let pgm = [ 0x26; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   computer.banks.(0x44) <- 0x80;
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x80 } }
@@ -944,7 +942,7 @@ let%expect_test "testing ROL ZEROPAGE Negative Flag (0x26)" =
   let cycles = 5 in
   (* LDA $44 *)
   let pgm = [ 0x26; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   computer.banks.(0x44) <- 0x40;
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x00 } }
@@ -967,7 +965,7 @@ let%expect_test "testing INC ZEROPAGE Add 1 (0xE6)" =
   let cycles = 5 in
   (* LDA $44 *)
   let pgm = [ 0xE6; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   computer.banks.(0x44) <- 0x01;
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x00 } }
@@ -990,7 +988,7 @@ let%expect_test "testing INC ZEROPAGE Negative Flag (0xE6)" =
   let cycles = 5 in
   (* LDA $44 *)
   let pgm = [ 0xE6; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   computer.banks.(0x44) <- 0x7F;
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x00 } }
@@ -1013,7 +1011,7 @@ let%expect_test "testing INC ZEROPAGE OverFlow (0xE6)" =
   let cycles = 5 in
   (* LDA $44 *)
   let pgm = [ 0xE6; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   computer.banks.(0x44) <- 0xFF;
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x80 } }
@@ -1036,7 +1034,7 @@ let%expect_test "testing DEC ZEROPAGE dec 1 (0xC6)" =
   let cycles = 5 in
   (* LDA $44 *)
   let pgm = [ 0xC6; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   computer.banks.(0x44) <- 0x02;
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x00 } }
@@ -1059,7 +1057,7 @@ let%expect_test "testing DEC ZEROPAGE set Negative Flag (0xC6)" =
   let cycles = 5 in
   (* LDA $44 *)
   let pgm = [ 0xC6; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   computer.banks.(0x44) <- 0x00;
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x02 } }
@@ -1082,7 +1080,7 @@ let%expect_test "testing DEC ZEROPAGE Unset negative (0xC6)" =
   let cycles = 5 in
   (* LDA $44 *)
   let pgm = [ 0xC6; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   computer.banks.(0x44) <- 0x80;
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x80 } }
@@ -1105,7 +1103,7 @@ let%expect_test "testing DEC ZEROPAGE dec to zero (0xC6)" =
   let cycles = 5 in
   (* LDA $44 *)
   let pgm = [ 0xC6; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   computer.banks.(0x44) <- 0x01;
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x00 } }
@@ -1127,7 +1125,7 @@ let%expect_test "testing SBC Binary ZEROPAGE (0xE5) No borrow" =
   let cycles = 3 in
   (* LDA $44 *)
   let pgm = [ 0xE5; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer = { computer with cpu = { computer.cpu with a = 0x05; sr = 0x01 } } in
   computer.banks.(0x44) <- 0x02;
   let executions = execute_cycles cycles computer in
@@ -1139,7 +1137,7 @@ let%expect_test "testing SBC Binary ZEROPAGE (0xE5) No borrow" =
 let%expect_test "testing SBC Binary ZEROPAGE (0xE5) Substraction with Borrow " =
   let cycles = 3 in
   let pgm = [ 0xE5; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer = { computer with cpu = { computer.cpu with a = 0x05; sr = 0x00 } } in
   computer.banks.(0x44) <- 0x02;
   let executions = execute_cycles cycles computer in
@@ -1151,7 +1149,7 @@ let%expect_test "testing SBC Binary ZEROPAGE (0xE5) Substraction with Borrow " =
 let%expect_test "testing SBC Binary ZEROPAGE (0xE5) Underflow " =
   let cycles = 3 in
   let pgm = [ 0xE5; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer = { computer with cpu = { computer.cpu with a = 0x01; sr = 0x01 } } in
   computer.banks.(0x44) <- 0x02;
   let executions = execute_cycles cycles computer in
@@ -1163,7 +1161,7 @@ let%expect_test "testing SBC Binary ZEROPAGE (0xE5) Underflow " =
 let%expect_test "testing SBC Binary ZEROPAGE (0xE5) Overflow " =
   let cycles = 3 in
   let pgm = [ 0xE5; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer = { computer with cpu = { computer.cpu with a = 0x80; sr = 0x01 } } in
   computer.banks.(0x44) <- 0x01;
   let executions = execute_cycles cycles computer in
@@ -1175,7 +1173,7 @@ let%expect_test "testing SBC Binary ZEROPAGE (0xE5) Overflow " =
 let%expect_test "testing CMP ZEROPAGE (0xC5) Equality " =
   let cycles = 3 in
   let pgm = [ 0xC5; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer = { computer with cpu = { computer.cpu with a = 0x42; sr = 0x00 } } in
   computer.banks.(0x44) <- 0x42;
   let executions = execute_cycles cycles computer in
@@ -1187,7 +1185,7 @@ let%expect_test "testing CMP ZEROPAGE (0xC5) Equality " =
 let%expect_test "testing CMP ZEROPAGE (0xC5) Greater than" =
   let cycles = 3 in
   let pgm = [ 0xC5; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer = { computer with cpu = { computer.cpu with a = 0xFF; sr = 0x00 } } in
   computer.banks.(0x44) <- 0x01;
   let executions = execute_cycles cycles computer in
@@ -1199,7 +1197,7 @@ let%expect_test "testing CMP ZEROPAGE (0xC5) Greater than" =
 let%expect_test "testing CMP ZEROPAGE (0xC5) less than" =
   let cycles = 3 in
   let pgm = [ 0xC5; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer = { computer with cpu = { computer.cpu with a = 0x02; sr = 0x00 } } in
   computer.banks.(0x44) <- 0x03;
   let executions = execute_cycles cycles computer in
@@ -1211,7 +1209,7 @@ let%expect_test "testing CMP ZEROPAGE (0xC5) less than" =
 let%expect_test "testing BIT ZEROPAGE (0x24) specific bit" =
   let cycles = 3 in
   let pgm = [ 0x24; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer = { computer with cpu = { computer.cpu with a = 0x08; sr = 0x00 } } in
   computer.banks.(0x44) <- 0x0F;
   let executions = execute_cycles cycles computer in
@@ -1223,7 +1221,7 @@ let%expect_test "testing BIT ZEROPAGE (0x24) specific bit" =
 let%expect_test "testing BIT ZEROPAGE (0x24) Negative/Overflow" =
   let cycles = 3 in
   let pgm = [ 0x24; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer = { computer with cpu = { computer.cpu with a = 0x00; sr = 0x02 } } in
   computer.banks.(0x44) <- 0xC0;
   let executions = execute_cycles cycles computer in
@@ -1235,7 +1233,7 @@ let%expect_test "testing BIT ZEROPAGE (0x24) Negative/Overflow" =
 let%expect_test "testing BIT ZEROPAGE (0x24) Masking" =
   let cycles = 3 in
   let pgm = [ 0x24; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer = { computer with cpu = { computer.cpu with a = 0x01; sr = 0x00 } } in
   computer.banks.(0x44) <- 0xFE;
   let executions = execute_cycles cycles computer in
@@ -1247,7 +1245,7 @@ let%expect_test "testing BIT ZEROPAGE (0x24) Masking" =
 let%expect_test "testing CPX ZEROPAGE (0xE4) Equality " =
   let cycles = 3 in
   let pgm = [ 0xE4; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x42; y = 0x03; sr = 0x00 } }
   in
@@ -1261,7 +1259,7 @@ let%expect_test "testing CPX ZEROPAGE (0xE4) Equality " =
 let%expect_test "testing CPX ZEROPAGE (0xE4) Greater than" =
   let cycles = 3 in
   let pgm = [ 0xE4; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0xFF; y = 0x03; sr = 0x00 } }
   in
@@ -1275,7 +1273,7 @@ let%expect_test "testing CPX ZEROPAGE (0xE4) Greater than" =
 let%expect_test "testing CPX ZEROPAGE (0xE4) less than" =
   let cycles = 3 in
   let pgm = [ 0xE4; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x00 } }
   in
@@ -1289,7 +1287,7 @@ let%expect_test "testing CPX ZEROPAGE (0xE4) less than" =
 let%expect_test "testing CPY ZEROPAGE (0xC4) Equality " =
   let cycles = 3 in
   let pgm = [ 0xC4; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x42; sr = 0x00 } }
   in
@@ -1303,7 +1301,7 @@ let%expect_test "testing CPY ZEROPAGE (0xC4) Equality " =
 let%expect_test "testing CPY ZEROPAGE (0xC4) Greater than" =
   let cycles = 3 in
   let pgm = [ 0xC4; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0xFF; sr = 0x00 } }
   in
@@ -1317,7 +1315,7 @@ let%expect_test "testing CPY ZEROPAGE (0xC4) Greater than" =
 let%expect_test "testing CPY ZEROPAGE (0xC4) less than" =
   let cycles = 3 in
   let pgm = [ 0xC4; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x02; sr = 0x00 } }
   in
@@ -1333,7 +1331,7 @@ let%expect_test "testing ADC Binary IMMEDIATE (0x69) No flags" =
   let cycles = 2 in
   (* LDA $44 *)
   let pgm = [ 0x69; 0x03 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer = { computer with cpu = { computer.cpu with a = 0x02; sr = 0x00 } } in
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
@@ -1346,7 +1344,7 @@ let%expect_test "testing ADC Binary IMMEDIATE (0x69) with incomming Carry " =
   let cycles = 2 in
   (* LDA $44 *)
   let pgm = [ 0x69; 0x03 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer = { computer with cpu = { computer.cpu with a = 0x02; sr = 0x01 } } in
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
@@ -1359,7 +1357,7 @@ let%expect_test "testing ADC Binary IMMEDIATE (0x69) Generating Carry " =
   let cycles = 2 in
   (* LDA $44 *)
   let pgm = [ 0x69; 0xFF ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer = { computer with cpu = { computer.cpu with a = 0x01; sr = 0x00 } } in
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
@@ -1372,7 +1370,7 @@ let%expect_test "testing ADC Binary IMMEDIATE (0x69) Pos+Pos=Neg " =
   let cycles = 2 in
   (* LDA $44 *)
   let pgm = [ 0x69; 0x01 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer = { computer with cpu = { computer.cpu with a = 0x7F; sr = 0x00 } } in
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
@@ -1385,7 +1383,7 @@ let%expect_test "testing ADC Binary IMMEDIATE (0x69) Neg+Neg=Pos " =
   let cycles = 2 in
   (* LDA $44 *)
   let pgm = [ 0x69; 0xFF ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer = { computer with cpu = { computer.cpu with a = 0x80; sr = 0x80 } } in
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
@@ -1398,7 +1396,7 @@ let%expect_test "testing ADC Binary IMMEDIATE (0x69) Pos+Neg " =
   let cycles = 2 in
   (* LDA $44 *)
   let pgm = [ 0x69; 0x80 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer = { computer with cpu = { computer.cpu with a = 0x7F; sr = 0x00 } } in
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
@@ -1411,7 +1409,7 @@ let%expect_test "testing AND IMMEDIATE (0x29) non-zero positive" =
   let cycles = 2 in
   (* LDA $44 *)
   let pgm = [ 0x29; 0x03 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0b0000_0010; sr = 0x00 } }
   in
@@ -1426,7 +1424,7 @@ let%expect_test "testing AND IMMEDIATE (0x29) non-zero negative" =
   let cycles = 2 in
   (* LDA $44 *)
   let pgm = [ 0x29; 0x81 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0b1000_0010; sr = 0x00 } }
   in
@@ -1441,7 +1439,7 @@ let%expect_test "testing AND IMMEDIATE (0x29) zero" =
   let cycles = 2 in
   (* LDA $44 *)
   let pgm = [ 0x29; 0x02 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0b0000_0001; sr = 0x00 } }
   in
@@ -1455,7 +1453,7 @@ let%expect_test "testing AND IMMEDIATE (0x29) zero" =
 let%expect_test "testing CMP ZEROPAGE (0xC9) Equality " =
   let cycles = 2 in
   let pgm = [ 0xC9; 0x42 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer = { computer with cpu = { computer.cpu with a = 0x42; sr = 0x00 } } in
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
@@ -1466,7 +1464,7 @@ let%expect_test "testing CMP ZEROPAGE (0xC9) Equality " =
 let%expect_test "testing CMP ZEROPAGE (0xC9) Greater than" =
   let cycles = 2 in
   let pgm = [ 0xC9; 0x01 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer = { computer with cpu = { computer.cpu with a = 0xFF; sr = 0x00 } } in
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
@@ -1477,7 +1475,7 @@ let%expect_test "testing CMP ZEROPAGE (0xC9) Greater than" =
 let%expect_test "testing CMP ZEROPAGE (0xC9) less than" =
   let cycles = 2 in
   let pgm = [ 0xC9; 0x03 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer = { computer with cpu = { computer.cpu with a = 0x02; sr = 0x00 } } in
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
@@ -1488,7 +1486,7 @@ let%expect_test "testing CMP ZEROPAGE (0xC9) less than" =
 let%expect_test "testing CPX IMMEDIATE (0xE0) Equality " =
   let cycles = 2 in
   let pgm = [ 0xE0; 0x42 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x42; y = 0x03; sr = 0x00 } }
   in
@@ -1501,7 +1499,7 @@ let%expect_test "testing CPX IMMEDIATE (0xE0) Equality " =
 let%expect_test "testing CPX IMMEDIATE (0xE0) Greater than" =
   let cycles = 2 in
   let pgm = [ 0xE0; 0x01 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0xFF; y = 0x03; sr = 0x00 } }
   in
@@ -1514,7 +1512,7 @@ let%expect_test "testing CPX IMMEDIATE (0xE0) Greater than" =
 let%expect_test "testing CPX IMMEDIATE (0xE0) less than" =
   let cycles = 2 in
   let pgm = [ 0xE0; 0x03 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x00 } }
   in
@@ -1527,7 +1525,7 @@ let%expect_test "testing CPX IMMEDIATE (0xE0) less than" =
 let%expect_test "testing CPY IMMEDIATE (0xC0) Equality " =
   let cycles = 2 in
   let pgm = [ 0xC0; 0x42 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x42; sr = 0x00 } }
   in
@@ -1540,7 +1538,7 @@ let%expect_test "testing CPY IMMEDIATE (0xC0) Equality " =
 let%expect_test "testing CPY IMMEDIATE (0xC0) Greater than" =
   let cycles = 2 in
   let pgm = [ 0xC0; 0x01 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0xFF; sr = 0x00 } }
   in
@@ -1553,7 +1551,7 @@ let%expect_test "testing CPY IMMEDIATE (0xC0) Greater than" =
 let%expect_test "testing CPY IMMEDIATE (0xC0) less than" =
   let cycles = 2 in
   let pgm = [ 0xC0; 0x03 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x02; sr = 0x00 } }
   in
@@ -1568,7 +1566,7 @@ let%expect_test "testing EOR IMMEDIATE (0x49) non-zero positive" =
   let cycles = 2 in
   (* LDA $44 *)
   let pgm = [ 0x49; 0x01 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0b0000_0010; sr = 0x00 } }
   in
@@ -1583,7 +1581,7 @@ let%expect_test "testing EOR IMMEDIATE (0x49) non-zero negative" =
   let cycles = 2 in
   (* LDA $44 *)
   let pgm = [ 0x49; 0x81 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0b0000_0010; sr = 0x00 } }
   in
@@ -1598,7 +1596,7 @@ let%expect_test "testing EOR IMMEDIATE (0x49) zero" =
   let cycles = 2 in
   (* LDA $44 *)
   let pgm = [ 0x49; 0x02 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0b0000_0010; sr = 0x00 } }
   in
@@ -1613,7 +1611,7 @@ let%expect_test "testing ORA IMMEDIATE (0x09) non-zero positive" =
   let cycles = 2 in
   (* LDA $44 *)
   let pgm = [ 0x09; 0x03 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0b0000_0010; sr = 0x00 } }
   in
@@ -1628,7 +1626,7 @@ let%expect_test "testing ORA IMMEDIATE (0x09) non-zero negative" =
   let cycles = 2 in
   (* LDA $44 *)
   let pgm = [ 0x09; 0x81 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0b1000_0010; sr = 0x00 } }
   in
@@ -1643,7 +1641,7 @@ let%expect_test "testing ORA IMMEDIATE (0x09) zero" =
   let cycles = 2 in
   (* LDA $44 *)
   let pgm = [ 0x09; 0x00 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0b0000_0000; sr = 0x02 } }
   in
@@ -1656,7 +1654,7 @@ let%expect_test "testing ORA IMMEDIATE (0x09) zero" =
 let%expect_test "testing LDA ABSOLUTE (0xAD) non-zero positive" =
   let cycles = 4 in
   let pgm = [ 0xAD; 0x69; 0x42 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   computer.banks.(0x4269) <- 0x01;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
@@ -1667,7 +1665,7 @@ let%expect_test "testing LDA ABSOLUTE (0xAD) non-zero positive" =
 let%expect_test "testing LDA ABSOLUTE (0xAD) non-zero negative" =
   let cycles = 4 in
   let pgm = [ 0xAD; 0x69; 0x42 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   computer.banks.(0x4269) <- 0x80;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
@@ -1678,7 +1676,7 @@ let%expect_test "testing LDA ABSOLUTE (0xAD) non-zero negative" =
 let%expect_test "testing LDA ABSOLUTE (0xAD) zero" =
   let cycles = 4 in
   let pgm = [ 0xAD; 0x69; 0x42 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   computer.banks.(0x4269) <- 0x00;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
@@ -1690,7 +1688,7 @@ let%expect_test "testing LDX ABSOLUTE (0xAE) non-zero positive" =
   let cycles = 4 in
   (*69 LDA $44 *)
   let pgm = [ 0xAE; 0x69; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   computer.banks.(0x4469) <- 0x01;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
@@ -1701,7 +1699,7 @@ let%expect_test "testing LDX ABSOLUTE (0xAE) non-zero positive" =
 let%expect_test "testing LDX ABSOLUTE (0xAE) non-zero negative" =
   let cycles = 4 in
   let pgm = [ 0xAE; 0x69; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   computer.banks.(0x4469) <- 0x80;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
@@ -1712,7 +1710,7 @@ let%expect_test "testing LDX ABSOLUTE (0xAE) non-zero negative" =
 let%expect_test "testing LDX ABSOLUTE (0xAE) zero" =
   let cycles = 4 in
   let pgm = [ 0xAE; 0x69; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   computer.banks.(0x4469) <- 0x00;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
@@ -1723,7 +1721,7 @@ let%expect_test "testing LDX ABSOLUTE (0xAE) zero" =
 let%expect_test "testing LDY IMMEDIATE (0xAC) non-zero positive" =
   let cycles = 4 in
   let pgm = [ 0xAC; 0x69; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   computer.banks.(0x04469) <- 0x01;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
@@ -1734,7 +1732,7 @@ let%expect_test "testing LDY IMMEDIATE (0xAC) non-zero positive" =
 let%expect_test "testing LDY IMMEDIATE (0xAC) non-zero negative" =
   let cycles = 4 in
   let pgm = [ 0xAC; 0x69; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   computer.banks.(0x04469) <- 0x80;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
@@ -1745,7 +1743,7 @@ let%expect_test "testing LDY IMMEDIATE (0xAC) non-zero negative" =
 let%expect_test "testing LDY IMMEDIATE (0xAC) zero" =
   let cycles = 4 in
   let pgm = [ 0xAC; 0x69; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   computer.banks.(0x04469) <- 0x00;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
@@ -1758,7 +1756,7 @@ let%expect_test "testing ORA ABSOLUTE (0x0D) non-zero positive" =
   let cycles = 4 in
   (* LDA $44 *)
   let pgm = [ 0x0D; 0x69; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0b0000_0010; sr = 0x00 } }
   in
@@ -1774,7 +1772,7 @@ let%expect_test "testing ORA ABSOLUTE (0x0D) non-zero negative" =
   let cycles = 4 in
   (* LDA $44 *)
   let pgm = [ 0x0D; 0x69; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0b1000_0010; sr = 0x00 } }
   in
@@ -1790,7 +1788,7 @@ let%expect_test "testing ORA ABSOLUTE (0x0D) zero" =
   let cycles = 4 in
   (* LDA $44 *)
   let pgm = [ 0x0D; 0x69; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0b0000_0000; sr = 0x02 } }
   in
@@ -1806,7 +1804,7 @@ let%expect_test "testing ADC Binary ABSOLUTE (0x6D) No flags" =
   let cycles = 4 in
   (* LDA $44 *)
   let pgm = [ 0x6D; 0x69; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer = { computer with cpu = { computer.cpu with a = 0x02; sr = 0x00 } } in
   computer.banks.(0x4469) <- 0x03;
   let executions = execute_cycles cycles computer in
@@ -1820,7 +1818,7 @@ let%expect_test "testing ADC Binary ABSOLUTE (0x6D) with incomming Carry " =
   let cycles = 4 in
   (* LDA $44 *)
   let pgm = [ 0x6D; 0x69; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer = { computer with cpu = { computer.cpu with a = 0x02; sr = 0x01 } } in
   computer.banks.(0x4469) <- 0x03;
   let executions = execute_cycles cycles computer in
@@ -1834,7 +1832,7 @@ let%expect_test "testing ADC Binary ABSOLUTE (0x6D) Generating Carry " =
   let cycles = 4 in
   (* LDA $44 *)
   let pgm = [ 0x6D; 0x69; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer = { computer with cpu = { computer.cpu with a = 0x01; sr = 0x00 } } in
   computer.banks.(0x4469) <- 0xFF;
   let executions = execute_cycles cycles computer in
@@ -1848,7 +1846,7 @@ let%expect_test "testing ADC Binary ABSOLUTE (0x6D) Pos+Pos=Neg " =
   let cycles = 4 in
   (* LDA $44 *)
   let pgm = [ 0x6D; 0x69; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer = { computer with cpu = { computer.cpu with a = 0x7F; sr = 0x00 } } in
   computer.banks.(0x4469) <- 0x01;
   let executions = execute_cycles cycles computer in
@@ -1862,7 +1860,7 @@ let%expect_test "testing ADC Binary ABSOLUTE (0x6D) Neg+Neg=Pos " =
   let cycles = 4 in
   (* LDA $44 *)
   let pgm = [ 0x6D; 0x69; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer = { computer with cpu = { computer.cpu with a = 0x80; sr = 0x80 } } in
   computer.banks.(0x4469) <- 0xFF;
   let executions = execute_cycles cycles computer in
@@ -1876,7 +1874,7 @@ let%expect_test "testing ADC Binary ABSOLUTE (0x6D) Pos+Neg " =
   let cycles = 4 in
   (* LDA $44 *)
   let pgm = [ 0x6D; 0x69; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer = { computer with cpu = { computer.cpu with a = 0x7F; sr = 0x00 } } in
   computer.banks.(0x4469) <- 0x80;
   let executions = execute_cycles cycles computer in
@@ -1890,7 +1888,7 @@ let%expect_test "testing AND ABSOLUTE (0x2D) non-zero positive" =
   let cycles = 4 in
   (* LDA $44 *)
   let pgm = [ 0x2D; 0x69; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0b0000_0010; sr = 0x00 } }
   in
@@ -1906,7 +1904,7 @@ let%expect_test "testing AND ABSOLUTE (0x2D) non-zero negative" =
   let cycles = 4 in
   (* LDA $44 *)
   let pgm = [ 0x2D; 0x69; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0b1000_0010; sr = 0x00 } }
   in
@@ -1922,7 +1920,7 @@ let%expect_test "testing AND ABSOLUTE (0x2D) zero" =
   let cycles = 4 in
   (* LDA $44 *)
   let pgm = [ 0x2D; 0x69; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0b0000_0001; sr = 0x00 } }
   in
@@ -1936,7 +1934,7 @@ let%expect_test "testing AND ABSOLUTE (0x2D) zero" =
 let%expect_test "testing BIT ABSOLUTE (0x2C) specific bit" =
   let cycles = 4 in
   let pgm = [ 0x2C; 0x69; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer = { computer with cpu = { computer.cpu with a = 0x08; sr = 0x00 } } in
   computer.banks.(0x4469) <- 0x0F;
   let executions = execute_cycles cycles computer in
@@ -1948,7 +1946,7 @@ let%expect_test "testing BIT ABSOLUTE (0x2C) specific bit" =
 let%expect_test "testing BIT ABSOLUTE (0x2C) Negative/Overflow" =
   let cycles = 4 in
   let pgm = [ 0x2C; 0x69; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer = { computer with cpu = { computer.cpu with a = 0x00; sr = 0x02 } } in
   computer.banks.(0x4469) <- 0xC0;
   let executions = execute_cycles cycles computer in
@@ -1960,7 +1958,7 @@ let%expect_test "testing BIT ABSOLUTE (0x2C) Negative/Overflow" =
 let%expect_test "testing BIT ABSOLUTE (0x2C) Masking" =
   let cycles = 4 in
   let pgm = [ 0x2C; 0x69; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer = { computer with cpu = { computer.cpu with a = 0x01; sr = 0x00 } } in
   computer.banks.(0x4469) <- 0xFE;
   let executions = execute_cycles cycles computer in
@@ -1972,7 +1970,7 @@ let%expect_test "testing BIT ABSOLUTE (0x2C) Masking" =
 let%expect_test "testing CMP ABSOLUTE (0xCD) Equality " =
   let cycles = 4 in
   let pgm = [ 0xCD; 0x69; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer = { computer with cpu = { computer.cpu with a = 0x42; sr = 0x00 } } in
   computer.banks.(0x4469) <- 0x42;
   let executions = execute_cycles cycles computer in
@@ -1984,7 +1982,7 @@ let%expect_test "testing CMP ABSOLUTE (0xCD) Equality " =
 let%expect_test "testing CMP ABSOLUTE (0xCD) Greater than" =
   let cycles = 4 in
   let pgm = [ 0xCD; 0x69; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer = { computer with cpu = { computer.cpu with a = 0xFF; sr = 0x00 } } in
   computer.banks.(0x4469) <- 0x01;
   let executions = execute_cycles cycles computer in
@@ -1996,7 +1994,7 @@ let%expect_test "testing CMP ABSOLUTE (0xCD) Greater than" =
 let%expect_test "testing CMP ABSOLUTE (0xCD) less than" =
   let cycles = 4 in
   let pgm = [ 0xCD; 0x69; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer = { computer with cpu = { computer.cpu with a = 0x02; sr = 0x00 } } in
   computer.banks.(0x4469) <- 0x03;
   let executions = execute_cycles cycles computer in
@@ -2008,7 +2006,7 @@ let%expect_test "testing CMP ABSOLUTE (0xCD) less than" =
 let%expect_test "testing CPX ABSOLUTE (0xEC) Equality " =
   let cycles = 4 in
   let pgm = [ 0xEC; 0x69; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x42; y = 0x03; sr = 0x00 } }
   in
@@ -2022,7 +2020,7 @@ let%expect_test "testing CPX ABSOLUTE (0xEC) Equality " =
 let%expect_test "testing CPX ABSOLUTE (0xEC) Greater than" =
   let cycles = 4 in
   let pgm = [ 0xEC; 0x69; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0xFF; y = 0x03; sr = 0x00 } }
   in
@@ -2036,7 +2034,7 @@ let%expect_test "testing CPX ABSOLUTE (0xEC) Greater than" =
 let%expect_test "testing CPX ZEROPAGE (0xEC) less than" =
   let cycles = 4 in
   let pgm = [ 0xEC; 0x69; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x00 } }
   in
@@ -2050,7 +2048,7 @@ let%expect_test "testing CPX ZEROPAGE (0xEC) less than" =
 let%expect_test "testing CPY ABSOLUTE (0xCC) Equality " =
   let cycles = 4 in
   let pgm = [ 0xCC; 0x69; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x42; sr = 0x00 } }
   in
@@ -2064,7 +2062,7 @@ let%expect_test "testing CPY ABSOLUTE (0xCC) Equality " =
 let%expect_test "testing CPY ABSOLUTE (0xCC) Greater than" =
   let cycles = 4 in
   let pgm = [ 0xCC; 0x69; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0xFF; sr = 0x00 } }
   in
@@ -2078,7 +2076,7 @@ let%expect_test "testing CPY ABSOLUTE (0xCC) Greater than" =
 let%expect_test "testing CPY ABSOLUTE (0xCC) less than" =
   let cycles = 4 in
   let pgm = [ 0xCC; 0x69; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x02; sr = 0x00 } }
   in
@@ -2094,7 +2092,7 @@ let%expect_test "testing EOR ABSOLUTE (0x4D) non-zero positive" =
   let cycles = 4 in
   (* LDA $44 *)
   let pgm = [ 0x4D; 0x69; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0b0000_0010; sr = 0x00 } }
   in
@@ -2110,7 +2108,7 @@ let%expect_test "testing EOR ABSOLUTE (0x4D) non-zero negative" =
   let cycles = 4 in
   (* LDA $44 *)
   let pgm = [ 0x4D; 0x69; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0b0000_0010; sr = 0x00 } }
   in
@@ -2126,7 +2124,7 @@ let%expect_test "testing EOR ABSOLUTE (0x4D) zero" =
   let cycles = 4 in
   (* LDA $44 *)
   let pgm = [ 0x4D; 0x69; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0b0000_0010; sr = 0x00 } }
   in
@@ -2140,7 +2138,7 @@ let%expect_test "testing EOR ABSOLUTE (0x4D) zero" =
 let%expect_test "testing STA IMMEDIATE (0x8D)" =
   let cycles = 4 in
   let pgm = [ 0x8D; 0x69; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer = { computer with cpu = { computer.cpu with a = 0x01; sr = 0x00 } } in
   let executions = execute_cycles cycles computer in
   let last_computer = List.last_exn executions in
@@ -2157,7 +2155,7 @@ let%expect_test "testing STA IMMEDIATE (0x8D)" =
 let%expect_test "testing STX IMMEDIATE (0x8E)" =
   let cycles = 4 in
   let pgm = [ 0x8E; 0x69; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x00 } }
   in
@@ -2176,7 +2174,7 @@ let%expect_test "testing STX IMMEDIATE (0x8E)" =
 let%expect_test "testing STY IMMEDIATE (0x8C)" =
   let cycles = 4 in
   let pgm = [ 0x8C; 0x69; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x00 } }
   in
@@ -2198,7 +2196,7 @@ let%expect_test "testing DEC ABSOLUTE dec 1 (0xCE)" =
   let cycles = 6 in
   (* LDA $44 *)
   let pgm = [ 0xCE; 0x69; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   computer.banks.(0x4469) <- 0x02;
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x00 } }
@@ -2221,7 +2219,7 @@ let%expect_test "testing DEC ABSOLUTE set Negative Flag (0xCE)" =
   let cycles = 6 in
   (* LDA $44 *)
   let pgm = [ 0xCE; 0x69; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   computer.banks.(0x4469) <- 0x00;
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x02 } }
@@ -2241,7 +2239,7 @@ let%expect_test "testing DEC ABSOLUTE set Negative Flag (0xCE)" =
 let%expect_test "testing DEC ABSOLUTE Unset negative (0xCE)" =
   let cycles = 6 in
   let pgm = [ 0xCE; 0x69; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   computer.banks.(0x4469) <- 0x80;
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x80 } }
@@ -2264,7 +2262,7 @@ let%expect_test "testing DEC ABSOLUTE dec to zero (0xCE)" =
   let cycles = 6 in
   (* LDA $44 *)
   let pgm = [ 0xCE; 0x69; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   computer.banks.(0x4469) <- 0x01;
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x00 } }
@@ -2287,7 +2285,7 @@ let%expect_test "testing ASL IMMEDIATE Basic (0x0E)" =
   let cycles = 6 in
   (* LDA $44 *)
   let pgm = [ 0x0E; 0x69; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   computer.banks.(0x4469) <- 0x01;
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x00 } }
@@ -2310,7 +2308,7 @@ let%expect_test "testing ASL IMMEDIATE Shift Out (0x0E)" =
   let cycles = 6 in
   (* LDA $44 *)
   let pgm = [ 0x0E; 0x69; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   computer.banks.(0x4469) <- 0x80;
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x00 } }
@@ -2333,7 +2331,7 @@ let%expect_test "testing ASL IMMEDIATE Negative FLag  (0x0E)" =
   let cycles = 6 in
   (* LDA $44 *)
   let pgm = [ 0x0E; 0x69; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   computer.banks.(0x4469) <- 0x40;
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x00 } }
@@ -2356,7 +2354,7 @@ let%expect_test "testing INC ABSOLUTE Add 1 (0xEE)" =
   let cycles = 6 in
   (* LDA $44 *)
   let pgm = [ 0xEE; 0x69; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   computer.banks.(0x4469) <- 0x01;
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x00 } }
@@ -2379,7 +2377,7 @@ let%expect_test "testing INC ABSOLUTE Negative Flag (0xEE)" =
   let cycles = 6 in
   (* LDA $44 *)
   let pgm = [ 0xEE; 0x69; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   computer.banks.(0x4469) <- 0x7F;
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x00 } }
@@ -2402,7 +2400,7 @@ let%expect_test "testing INC ABSOLUTE OverFlow (0xEE)" =
   let cycles = 6 in
   (* LDA $44 *)
   let pgm = [ 0xEE; 0x69; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   computer.banks.(0x4469) <- 0xFF;
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x80 } }
@@ -2425,7 +2423,7 @@ let%expect_test "testing LSR IMMEDIATE Basic (0x4E)" =
   let cycles = 6 in
   (* LDA $44 *)
   let pgm = [ 0x4E; 0x69; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   computer.banks.(0x4469) <- 0x02;
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x01 } }
@@ -2448,7 +2446,7 @@ let%expect_test "testing LSR IMMEDIATE Shift Into (0x4E)" =
   let cycles = 6 in
   (* LDA $44 *)
   let pgm = [ 0x4E; 0x69; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   computer.banks.(0x4469) <- 0x01;
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x00 } }
@@ -2471,7 +2469,7 @@ let%expect_test "testing LSR IMMEDIATE Hign Bit clear  (0x4E)" =
   let cycles = 6 in
   (* LDA $44 *)
   let pgm = [ 0x4E; 0x69; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   computer.banks.(0x4469) <- 0x80;
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x01 } }
@@ -2494,7 +2492,7 @@ let%expect_test "testing ROL ABSOLUTE Carry to bit 0 (0x2E)" =
   let cycles = 6 in
   (* LDA $44 *)
   let pgm = [ 0x2E; 0x69; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   computer.banks.(0x4469) <- 0x00;
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x03 } }
@@ -2517,7 +2515,7 @@ let%expect_test "testing ROL ABSOLUTE Bit 7 to Carry (0x2E)" =
   let cycles = 6 in
   (* LDA $44 *)
   let pgm = [ 0x2E; 0x69; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   computer.banks.(0x4469) <- 0x80;
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x80 } }
@@ -2540,7 +2538,7 @@ let%expect_test "testing ROL ABSOLUTE Negative Flag (0x2E)" =
   let cycles = 6 in
   (* LDA $44 *)
   let pgm = [ 0x2E; 0x69; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   computer.banks.(0x4469) <- 0x40;
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x00 } }
@@ -2563,7 +2561,7 @@ let%expect_test "testing ROR ABSOLUTE Carry to Bit 7 (0x6E)" =
   let cycles = 6 in
   (* LDA $44 *)
   let pgm = [ 0x6E; 0x69; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   computer.banks.(0x4469) <- 0x00;
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x03 } }
@@ -2586,7 +2584,7 @@ let%expect_test "testing ROR ABSOLUTE Bit 0 to Carry (0x6E)" =
   let cycles = 6 in
   (* LDA $44 *)
   let pgm = [ 0x6E; 0x69; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   computer.banks.(0x4469) <- 0x01;
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x00 } }
@@ -2609,7 +2607,7 @@ let%expect_test "testing ROR ABSOLUTE Negative Flag (0x6E)" =
   let cycles = 6 in
   (* LDA $44 *)
   let pgm = [ 0x6E; 0x69; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   computer.banks.(0x4469) <- 0x7F;
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x01 } }
@@ -2630,7 +2628,7 @@ let%expect_test "testing JMP ABSOLUTE Normal (0x4C)" =
   let cycles = 3 in
   (* JMP $0x4469 *)
   let pgm = [ 0x4C; 0x69; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x00 } }
   in
@@ -2643,7 +2641,7 @@ let%expect_test "testing JMP ABSOLUTE Normal (0x4C)" =
 let%expect_test "testing ASL ACCUMULATOR Basic (0x0A)" =
   let cycles = 2 in
   let pgm = [ 0x0A ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x00 } }
   in
@@ -2656,7 +2654,7 @@ let%expect_test "testing ASL ACCUMULATOR Basic (0x0A)" =
 let%expect_test "testing ASL ACCUMULATOR Shift Out (0x0A)" =
   let cycles = 2 in
   let pgm = [ 0x0A ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0x80; x = 0x02; y = 0x03; sr = 0x80 } }
   in
@@ -2669,7 +2667,7 @@ let%expect_test "testing ASL ACCUMULATOR Shift Out (0x0A)" =
 let%expect_test "testing ASL ACCUMULATOR Negative FLag  (0x0A)" =
   let cycles = 2 in
   let pgm = [ 0x0A ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   computer.banks.(0x44) <- 0x40;
   let computer =
     { computer with cpu = { computer.cpu with a = 0x40; x = 0x02; y = 0x03; sr = 0x00 } }
@@ -2683,7 +2681,7 @@ let%expect_test "testing ASL ACCUMULATOR Negative FLag  (0x0A)" =
 let%expect_test "testing LSR ACCUMULATOR Basic (0x4A)" =
   let cycles = 2 in
   let pgm = [ 0x4A ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   computer.banks.(0x44) <- 0x02;
   let computer =
     { computer with cpu = { computer.cpu with a = 0x02; x = 0x02; y = 0x03; sr = 0x01 } }
@@ -2697,7 +2695,7 @@ let%expect_test "testing LSR ACCUMULATOR Basic (0x4A)" =
 let%expect_test "testing LSR ACCUMULATOR Shift Into (0x4A)" =
   let cycles = 2 in
   let pgm = [ 0x4A ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x00 } }
   in
@@ -2710,7 +2708,7 @@ let%expect_test "testing LSR ACCUMULATOR Shift Into (0x4A)" =
 let%expect_test "testing LSR ACCUMULATOR Hign Bit clear  (0x4A)" =
   let cycles = 2 in
   let pgm = [ 0x4A ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0x80; x = 0x02; y = 0x03; sr = 0x80 } }
   in
@@ -2723,7 +2721,7 @@ let%expect_test "testing LSR ACCUMULATOR Hign Bit clear  (0x4A)" =
 let%expect_test "testing ROR ACCUMULATOR Carry to Bit 7 (0x6A)" =
   let cycles = 2 in
   let pgm = [ 0x6A ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0x00; x = 0x02; y = 0x03; sr = 0x03 } }
   in
@@ -2736,7 +2734,7 @@ let%expect_test "testing ROR ACCUMULATOR Carry to Bit 7 (0x6A)" =
 let%expect_test "testing ROR ACCUMULATOR Bit 0 to Carry (0x6A)" =
   let cycles = 2 in
   let pgm = [ 0x6A ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x00 } }
   in
@@ -2749,7 +2747,7 @@ let%expect_test "testing ROR ACCUMULATOR Bit 0 to Carry (0x6A)" =
 let%expect_test "testing ROR ACCUMULATOR Negative Flag (0x6A)" =
   let cycles = 2 in
   let pgm = [ 0x6A ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0x7F; x = 0x02; y = 0x03; sr = 0x01 } }
   in
@@ -2762,7 +2760,7 @@ let%expect_test "testing ROR ACCUMULATOR Negative Flag (0x6A)" =
 let%expect_test "testing ROL ACCUMULATOR Carry to bit 0 (0x2A)" =
   let cycles = 2 in
   let pgm = [ 0x2A ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0x00; x = 0x02; y = 0x03; sr = 0x03 } }
   in
@@ -2775,7 +2773,7 @@ let%expect_test "testing ROL ACCUMULATOR Carry to bit 0 (0x2A)" =
 let%expect_test "testing ROL ACCUMULATOR Bit 7 to Carry (0x2A)" =
   let cycles = 2 in
   let pgm = [ 0x2A ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0x80; x = 0x02; y = 0x03; sr = 0x80 } }
   in
@@ -2788,7 +2786,7 @@ let%expect_test "testing ROL ACCUMULATOR Bit 7 to Carry (0x2A)" =
 let%expect_test "testing ROL ACCUMULATOR Negative Flag (0x2A)" =
   let cycles = 2 in
   let pgm = [ 0x2A ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0x40; x = 0x02; y = 0x03; sr = 0x00 } }
   in
@@ -2801,7 +2799,7 @@ let%expect_test "testing ROL ACCUMULATOR Negative Flag (0x2A)" =
 let%expect_test "testing INX IMPLIED Add 1 (0xE8)" =
   let cycles = 2 in
   let pgm = [ 0xE8 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x01; y = 0x03; sr = 0x00 } }
   in
@@ -2814,7 +2812,7 @@ let%expect_test "testing INX IMPLIED Add 1 (0xE8)" =
 let%expect_test "testing INC IMPLIED Negative Flag (0xE8)" =
   let cycles = 2 in
   let pgm = [ 0xE8 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x7F; y = 0x03; sr = 0x00 } }
   in
@@ -2827,7 +2825,7 @@ let%expect_test "testing INC IMPLIED Negative Flag (0xE8)" =
 let%expect_test "testing INC IMPLIED OverFlow (0xE8)" =
   let cycles = 2 in
   let pgm = [ 0xE8 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0xFF; y = 0x03; sr = 0x80 } }
   in
@@ -2840,7 +2838,7 @@ let%expect_test "testing INC IMPLIED OverFlow (0xE8)" =
 let%expect_test "testing INY IMPLIED Add 1 (0xC8)" =
   let cycles = 2 in
   let pgm = [ 0xC8 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x01; sr = 0x00 } }
   in
@@ -2853,7 +2851,7 @@ let%expect_test "testing INY IMPLIED Add 1 (0xC8)" =
 let%expect_test "testing INY IMPLIED Negative Flag (0xC8)" =
   let cycles = 2 in
   let pgm = [ 0xC8 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x7F; sr = 0x00 } }
   in
@@ -2866,7 +2864,7 @@ let%expect_test "testing INY IMPLIED Negative Flag (0xC8)" =
 let%expect_test "testing INY IMPLIED OverFlow (0xC8)" =
   let cycles = 2 in
   let pgm = [ 0xC8 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0xFF; sr = 0x80 } }
   in
@@ -2879,7 +2877,7 @@ let%expect_test "testing INY IMPLIED OverFlow (0xC8)" =
 let%expect_test "testing DEX IMPLIED dec 1 (0xCA)" =
   let cycles = 2 in
   let pgm = [ 0xCA ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x00 } }
   in
@@ -2892,7 +2890,7 @@ let%expect_test "testing DEX IMPLIED dec 1 (0xCA)" =
 let%expect_test "testing DEX IMPLIED set Negative Flag (0xCA)" =
   let cycles = 2 in
   let pgm = [ 0xCA ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x00; y = 0x03; sr = 0x02 } }
   in
@@ -2905,7 +2903,7 @@ let%expect_test "testing DEX IMPLIED set Negative Flag (0xCA)" =
 let%expect_test "testing DEX IMPLIED Unset negative (0xCA)" =
   let cycles = 2 in
   let pgm = [ 0xCA ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x80; y = 0x03; sr = 0x80 } }
   in
@@ -2918,7 +2916,7 @@ let%expect_test "testing DEX IMPLIED Unset negative (0xCA)" =
 let%expect_test "testing DEX IMPLIED dec to zero (0xCA)" =
   let cycles = 2 in
   let pgm = [ 0xCA ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x01; y = 0x03; sr = 0x00 } }
   in
@@ -2931,7 +2929,7 @@ let%expect_test "testing DEX IMPLIED dec to zero (0xCA)" =
 let%expect_test "testing DEY IMPLIED dec 1 (0x88)" =
   let cycles = 2 in
   let pgm = [ 0x88 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x02; sr = 0x00 } }
   in
@@ -2944,7 +2942,7 @@ let%expect_test "testing DEY IMPLIED dec 1 (0x88)" =
 let%expect_test "testing DEY IMPLIED set Negative Flag (0x88)" =
   let cycles = 2 in
   let pgm = [ 0x88 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x00; sr = 0x02 } }
   in
@@ -2957,7 +2955,7 @@ let%expect_test "testing DEY IMPLIED set Negative Flag (0x88)" =
 let%expect_test "testing DEY IMPLIED Unset negative (0x88)" =
   let cycles = 2 in
   let pgm = [ 0x88 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x80; sr = 0x80 } }
   in
@@ -2970,7 +2968,7 @@ let%expect_test "testing DEY IMPLIED Unset negative (0x88)" =
 let%expect_test "testing DEY IMPLIED dec to zero (0x88)" =
   let cycles = 2 in
   let pgm = [ 0x88 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x01; sr = 0x00 } }
   in
@@ -2983,7 +2981,7 @@ let%expect_test "testing DEY IMPLIED dec to zero (0x88)" =
 let%expect_test "testing CLC IMPLIED standard (0x18)" =
   let cycles = 2 in
   let pgm = [ 0x18 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x81 } }
   in
@@ -2996,7 +2994,7 @@ let%expect_test "testing CLC IMPLIED standard (0x18)" =
 let%expect_test "testing CLC IMPLIED No-Op (0x18)" =
   let cycles = 2 in
   let pgm = [ 0x18 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x80 } }
   in
@@ -3009,7 +3007,7 @@ let%expect_test "testing CLC IMPLIED No-Op (0x18)" =
 let%expect_test "testing CLD IMPLIED standard (0xD8)" =
   let cycles = 2 in
   let pgm = [ 0xD8 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x88 } }
   in
@@ -3022,7 +3020,7 @@ let%expect_test "testing CLD IMPLIED standard (0xD8)" =
 let%expect_test "testing CLD IMPLIED No-Op (0xD8)" =
   let cycles = 2 in
   let pgm = [ 0xD8 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x80 } }
   in
@@ -3035,7 +3033,7 @@ let%expect_test "testing CLD IMPLIED No-Op (0xD8)" =
 let%expect_test "testing CLI IMPLIED standard (0x58)" =
   let cycles = 2 in
   let pgm = [ 0x58 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x84 } }
   in
@@ -3048,7 +3046,7 @@ let%expect_test "testing CLI IMPLIED standard (0x58)" =
 let%expect_test "testing CLI IMPLIED No-Op (0x58)" =
   let cycles = 2 in
   let pgm = [ 0x58 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x80 } }
   in
@@ -3061,7 +3059,7 @@ let%expect_test "testing CLI IMPLIED No-Op (0x58)" =
 let%expect_test "testing CLV IMPLIED standard (0xB8)" =
   let cycles = 2 in
   let pgm = [ 0xB8 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x44 } }
   in
@@ -3074,7 +3072,7 @@ let%expect_test "testing CLV IMPLIED standard (0xB8)" =
 let%expect_test "testing CLV IMPLIED No-Op (0xB8)" =
   let cycles = 2 in
   let pgm = [ 0xB8 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x80 } }
   in
@@ -3087,7 +3085,7 @@ let%expect_test "testing CLV IMPLIED No-Op (0xB8)" =
 let%expect_test "testing SEC IMPLIED standard (0x38)" =
   let cycles = 2 in
   let pgm = [ 0x38 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x80 } }
   in
@@ -3100,7 +3098,7 @@ let%expect_test "testing SEC IMPLIED standard (0x38)" =
 let%expect_test "testing SEC IMPLIED No-Op (0x38)" =
   let cycles = 2 in
   let pgm = [ 0x38 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x81 } }
   in
@@ -3113,7 +3111,7 @@ let%expect_test "testing SEC IMPLIED No-Op (0x38)" =
 let%expect_test "testing SED IMPLIED standard (0xF8)" =
   let cycles = 2 in
   let pgm = [ 0xF8 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x80 } }
   in
@@ -3126,7 +3124,7 @@ let%expect_test "testing SED IMPLIED standard (0xF8)" =
 let%expect_test "testing SED IMPLIED No-Op (0xF8)" =
   let cycles = 2 in
   let pgm = [ 0xF8 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x88 } }
   in
@@ -3139,7 +3137,7 @@ let%expect_test "testing SED IMPLIED No-Op (0xF8)" =
 let%expect_test "testing SEI IMPLIED standard (0x78)" =
   let cycles = 2 in
   let pgm = [ 0x78 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x80 } }
   in
@@ -3152,7 +3150,7 @@ let%expect_test "testing SEI IMPLIED standard (0x78)" =
 let%expect_test "testing SEI IMPLIED No-Op (0x78)" =
   let cycles = 2 in
   let pgm = [ 0x78 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x84 } }
   in
@@ -3165,7 +3163,7 @@ let%expect_test "testing SEI IMPLIED No-Op (0x78)" =
 let%expect_test "testing TAX IMPLIED Positive (0xAA)" =
   let cycles = 2 in
   let pgm = [ 0xAA ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0x42; x = 0x02; y = 0x03; sr = 0x00 } }
   in
@@ -3178,7 +3176,7 @@ let%expect_test "testing TAX IMPLIED Positive (0xAA)" =
 let%expect_test "testing TAX IMPLIED Negative (0xAA)" =
   let cycles = 2 in
   let pgm = [ 0xAA ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0x80; x = 0x02; y = 0x03; sr = 0x00 } }
   in
@@ -3191,7 +3189,7 @@ let%expect_test "testing TAX IMPLIED Negative (0xAA)" =
 let%expect_test "testing TAX IMPLIED Zero flag (0xAA)" =
   let cycles = 2 in
   let pgm = [ 0xAA ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0x00; x = 0x02; y = 0x03; sr = 0x80 } }
   in
@@ -3204,7 +3202,7 @@ let%expect_test "testing TAX IMPLIED Zero flag (0xAA)" =
 let%expect_test "testing TXA IMPLIED Positive (0x8A)" =
   let cycles = 2 in
   let pgm = [ 0x8A ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x42; y = 0x03; sr = 0x00 } }
   in
@@ -3217,7 +3215,7 @@ let%expect_test "testing TXA IMPLIED Positive (0x8A)" =
 let%expect_test "testing TXA IMPLIED Negative (0x8A)" =
   let cycles = 2 in
   let pgm = [ 0x8A ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x80; y = 0x03; sr = 0x00 } }
   in
@@ -3230,7 +3228,7 @@ let%expect_test "testing TXA IMPLIED Negative (0x8A)" =
 let%expect_test "testing TXA IMPLIED Zero flag (0x8A)" =
   let cycles = 2 in
   let pgm = [ 0x8A ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x00; y = 0x03; sr = 0x80 } }
   in
@@ -3243,7 +3241,7 @@ let%expect_test "testing TXA IMPLIED Zero flag (0x8A)" =
 let%expect_test "testing TAY IMPLIED Positive (0xA8)" =
   let cycles = 2 in
   let pgm = [ 0xA8 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0x42; x = 0x02; y = 0x03; sr = 0x00 } }
   in
@@ -3256,7 +3254,7 @@ let%expect_test "testing TAY IMPLIED Positive (0xA8)" =
 let%expect_test "testing TAY IMPLIED Negative (0xA8)" =
   let cycles = 2 in
   let pgm = [ 0xA8 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0x80; x = 0x02; y = 0x03; sr = 0x00 } }
   in
@@ -3269,7 +3267,7 @@ let%expect_test "testing TAY IMPLIED Negative (0xA8)" =
 let%expect_test "testing TAY IMPLIED Zero flag (0xA8)" =
   let cycles = 2 in
   let pgm = [ 0xA8 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0x00; x = 0x02; y = 0x03; sr = 0x80 } }
   in
@@ -3282,7 +3280,7 @@ let%expect_test "testing TAY IMPLIED Zero flag (0xA8)" =
 let%expect_test "testing TYA IMPLIED Positive (0x98)" =
   let cycles = 2 in
   let pgm = [ 0x98 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x42; sr = 0x00 } }
   in
@@ -3295,7 +3293,7 @@ let%expect_test "testing TYA IMPLIED Positive (0x98)" =
 let%expect_test "testing TYA IMPLIED Negative (0x98)" =
   let cycles = 2 in
   let pgm = [ 0x98 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x80; sr = 0x00 } }
   in
@@ -3308,7 +3306,7 @@ let%expect_test "testing TYA IMPLIED Negative (0x98)" =
 let%expect_test "testing TYA IMPLIED Zero flag (0x98)" =
   let cycles = 2 in
   let pgm = [ 0x98 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x00; sr = 0x80 } }
   in
@@ -3321,7 +3319,7 @@ let%expect_test "testing TYA IMPLIED Zero flag (0x98)" =
 let%expect_test "testing TXS IMPLIED Positive (0x9A)" =
   let cycles = 2 in
   let pgm = [ 0x9A ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x42; y = 0x03; sp = 0xFF; sr = 0x00 }
@@ -3336,7 +3334,7 @@ let%expect_test "testing TXS IMPLIED Positive (0x9A)" =
 let%expect_test "testing TXS IMPLIED Negative (0x9A)" =
   let cycles = 2 in
   let pgm = [ 0x9A ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x80; y = 0x03; sp = 0xFF; sr = 0x00 }
@@ -3351,7 +3349,7 @@ let%expect_test "testing TXS IMPLIED Negative (0x9A)" =
 let%expect_test "testing TXS IMPLIED Zero flag (0x9A)" =
   let cycles = 2 in
   let pgm = [ 0x9A ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x00; y = 0x03; sp = 0xFF; sr = 0x80 }
@@ -3366,7 +3364,7 @@ let%expect_test "testing TXS IMPLIED Zero flag (0x9A)" =
 let%expect_test "testing TSX IMPLIED Positive (0xBA)" =
   let cycles = 2 in
   let pgm = [ 0xBA ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0x42; sr = 0x00 }
@@ -3381,7 +3379,7 @@ let%expect_test "testing TSX IMPLIED Positive (0xBA)" =
 let%expect_test "testing TSX IMPLIED Negative (0xBA)" =
   let cycles = 2 in
   let pgm = [ 0xBA ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0x80; sr = 0x00 }
@@ -3396,7 +3394,7 @@ let%expect_test "testing TSX IMPLIED Negative (0xBA)" =
 let%expect_test "testing TSX IMPLIED Zero flag (0xBA)" =
   let cycles = 2 in
   let pgm = [ 0xBA ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0x00; sr = 0x00 }
@@ -3411,7 +3409,7 @@ let%expect_test "testing TSX IMPLIED Zero flag (0xBA)" =
 let%expect_test "testing PHA IMPLIED (0x48)" =
   let cycles = 3 in
   let pgm = [ 0x48 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFE; sr = 0x00 }
@@ -3438,7 +3436,7 @@ let%expect_test "testing PHA IMPLIED (0x48)" =
 let%expect_test "testing PHP IMPLIED (0x08)" =
   let cycles = 3 in
   let pgm = [ 0x08 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFE; sr = 0x00 }
@@ -3465,7 +3463,7 @@ let%expect_test "testing PHP IMPLIED (0x08)" =
 let%expect_test "testing PLA IMPLIED Positive (0x68)" =
   let cycles = 4 in
   let pgm = [ 0x68 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -3484,7 +3482,7 @@ let%expect_test "testing PLA IMPLIED Positive (0x68)" =
 let%expect_test "testing PLA IMPLIED Negative (0x68)" =
   let cycles = 4 in
   let pgm = [ 0x68 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -3503,7 +3501,7 @@ let%expect_test "testing PLA IMPLIED Negative (0x68)" =
 let%expect_test "testing PLA IMPLIED Zero (0x68)" =
   let cycles = 4 in
   let pgm = [ 0x68 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -3522,7 +3520,7 @@ let%expect_test "testing PLA IMPLIED Zero (0x68)" =
 let%expect_test "testing PLP IMPLIED (0x28)" =
   let cycles = 4 in
   let pgm = [ 0x28 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -3538,10 +3536,29 @@ let%expect_test "testing PLP IMPLIED (0x28)" =
     {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1001 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFE sr: NV-bdiZC pc: 0x1001 inst: PLP |}]
 ;;
 
+let%expect_test "testing PLP IMPLIED (0x28) should clear break flag" =
+  let cycles = 4 in
+  let pgm = [ 0x28 ] in
+  let computer = init_test_computer 0x1000 pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
+    }
+  in
+  computer.banks.(0x1FC) <- 0x1C;
+  computer.banks.(0x1FD) <- 0b1101_0011;
+  computer.banks.(0x1FE) <- 0x1E;
+  computer.banks.(0x1FF) <- 0x1F;
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1001 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFE sr: NV-bdiZC pc: 0x1001 inst: PLP |}]
+;;
+
 let%expect_test "testing LDA ZEROPAGEX (0xB5) non-zero positive" =
   let cycles = 4 in
   let pgm = [ 0xB5; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -3557,7 +3574,7 @@ let%expect_test "testing LDA ZEROPAGEX (0xB5) non-zero positive" =
 let%expect_test "testing LDA ZEROPAGEX (0xB5) non-zero negative" =
   let cycles = 4 in
   let pgm = [ 0xB5; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -3573,7 +3590,7 @@ let%expect_test "testing LDA ZEROPAGEX (0xB5) non-zero negative" =
 let%expect_test "testing LDA ZEROPAGEX (0xB5) zero " =
   let cycles = 4 in
   let pgm = [ 0xB5; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -3589,7 +3606,7 @@ let%expect_test "testing LDA ZEROPAGEX (0xB5) zero " =
 let%expect_test "testing LDA ZEROPAGEX (0xB5) wrap around" =
   let cycles = 4 in
   let pgm = [ 0xB5; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0xFF; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -3605,7 +3622,7 @@ let%expect_test "testing LDA ZEROPAGEX (0xB5) wrap around" =
 let%expect_test "testing LDY ZEROPAGEX (0xB4) non-zero positive" =
   let cycles = 4 in
   let pgm = [ 0xB4; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -3621,7 +3638,7 @@ let%expect_test "testing LDY ZEROPAGEX (0xB4) non-zero positive" =
 let%expect_test "testing LDY ZEROPAGEX (0xB4) non-zero negative" =
   let cycles = 4 in
   let pgm = [ 0xB4; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -3637,7 +3654,7 @@ let%expect_test "testing LDY ZEROPAGEX (0xB4) non-zero negative" =
 let%expect_test "testing LDY ZEROPAGEX (0xB4) zero " =
   let cycles = 4 in
   let pgm = [ 0xB4; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -3653,7 +3670,7 @@ let%expect_test "testing LDY ZEROPAGEX (0xB4) zero " =
 let%expect_test "testing LDY ZEROPAGEX (0xB4) wrap around" =
   let cycles = 4 in
   let pgm = [ 0xB4; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0xFF; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -3669,7 +3686,7 @@ let%expect_test "testing LDY ZEROPAGEX (0xB4) wrap around" =
 let%expect_test "testing EOR ZEROPAGEX (0x55) non-zero positive" =
   let cycles = 4 in
   let pgm = [ 0x55; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -3685,7 +3702,7 @@ let%expect_test "testing EOR ZEROPAGEX (0x55) non-zero positive" =
 let%expect_test "testing EOR ZEROPAGEX (0x55) non-zero negative" =
   let cycles = 4 in
   let pgm = [ 0x55; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -3701,7 +3718,7 @@ let%expect_test "testing EOR ZEROPAGEX (0x55) non-zero negative" =
 let%expect_test "testing EOR ZEROPAGEX (0x55) zero " =
   let cycles = 4 in
   let pgm = [ 0x55; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -3717,7 +3734,7 @@ let%expect_test "testing EOR ZEROPAGEX (0x55) zero " =
 let%expect_test "testing EOR ZEROPAGEX (0x55) wrap around" =
   let cycles = 4 in
   let pgm = [ 0x55; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0xFF; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -3733,7 +3750,7 @@ let%expect_test "testing EOR ZEROPAGEX (0x55) wrap around" =
 let%expect_test "testing AND ZEROPAGEX (0x35) non-zero positive" =
   let cycles = 4 in
   let pgm = [ 0x35; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -3749,7 +3766,7 @@ let%expect_test "testing AND ZEROPAGEX (0x35) non-zero positive" =
 let%expect_test "testing AND ZEROPAGEX (0x35) non-zero negative" =
   let cycles = 4 in
   let pgm = [ 0x35; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x81; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -3765,7 +3782,7 @@ let%expect_test "testing AND ZEROPAGEX (0x35) non-zero negative" =
 let%expect_test "testing AND ZEROPAGEX (0x35) zero " =
   let cycles = 4 in
   let pgm = [ 0x35; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -3781,7 +3798,7 @@ let%expect_test "testing AND ZEROPAGEX (0x35) zero " =
 let%expect_test "testing AND ZEROPAGEX (0x35) wrap around" =
   let cycles = 4 in
   let pgm = [ 0x35; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0xFF; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -3797,7 +3814,7 @@ let%expect_test "testing AND ZEROPAGEX (0x35) wrap around" =
 let%expect_test "testing ORA ZEROPAGEX (0x15) non-zero positive" =
   let cycles = 4 in
   let pgm = [ 0x15; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -3813,7 +3830,7 @@ let%expect_test "testing ORA ZEROPAGEX (0x15) non-zero positive" =
 let%expect_test "testing ORA ZEROPAGEX (0x15) non-zero negative" =
   let cycles = 4 in
   let pgm = [ 0x15; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x80; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -3829,7 +3846,7 @@ let%expect_test "testing ORA ZEROPAGEX (0x15) non-zero negative" =
 let%expect_test "testing ORA ZEROPAGEX (0x15) zero " =
   let cycles = 4 in
   let pgm = [ 0x15; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x00; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -3845,7 +3862,7 @@ let%expect_test "testing ORA ZEROPAGEX (0x15) zero " =
 let%expect_test "testing ORA ZEROPAGEX (0x15) wrap around" =
   let cycles = 4 in
   let pgm = [ 0x15; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0xFF; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -3861,7 +3878,7 @@ let%expect_test "testing ORA ZEROPAGEX (0x15) wrap around" =
 let%expect_test "testing ADC ZEROPAGEX (0x75) non-zero positive" =
   let cycles = 4 in
   let pgm = [ 0x75; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -3877,7 +3894,7 @@ let%expect_test "testing ADC ZEROPAGEX (0x75) non-zero positive" =
 let%expect_test "testing ADC ZEROPAGEX (0x75) Incoming carry" =
   let cycles = 4 in
   let pgm = [ 0x75; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x01 }
@@ -3893,7 +3910,7 @@ let%expect_test "testing ADC ZEROPAGEX (0x75) Incoming carry" =
 let%expect_test "testing ADC ZEROPAGEX (0x75) Genrating Carry " =
   let cycles = 4 in
   let pgm = [ 0x75; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -3909,7 +3926,7 @@ let%expect_test "testing ADC ZEROPAGEX (0x75) Genrating Carry " =
 let%expect_test "testing ADC ZEROPAGEX (0x75) Pos+Pos=Neg" =
   let cycles = 4 in
   let pgm = [ 0x75; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x7F; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -3925,7 +3942,7 @@ let%expect_test "testing ADC ZEROPAGEX (0x75) Pos+Pos=Neg" =
 let%expect_test "testing ADC ZEROPAGEX (0x75) Pos+Neg" =
   let cycles = 4 in
   let pgm = [ 0x75; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x7F; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -3941,7 +3958,7 @@ let%expect_test "testing ADC ZEROPAGEX (0x75) Pos+Neg" =
 let%expect_test "testing ADC ZEROPAGEX (0x75) Neg+Neg=Pos" =
   let cycles = 4 in
   let pgm = [ 0x75; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x80; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -3957,7 +3974,7 @@ let%expect_test "testing ADC ZEROPAGEX (0x75) Neg+Neg=Pos" =
 let%expect_test "testing ADC ZEROPAGEX (0x75) wrap around" =
   let cycles = 4 in
   let pgm = [ 0x75; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0xFF; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -3975,7 +3992,7 @@ let%expect_test "testing STA ZEROPAGEX (0x95)" =
   let cycles = 4 in
   (* LDA $44 *)
   let pgm = [ 0x95; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -3999,7 +4016,7 @@ let%expect_test "testing STA ZEROPAGEX wrap around (0x95)" =
   let cycles = 4 in
   (* LDA $44 *)
   let pgm = [ 0x95; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0xFF; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -4023,7 +4040,7 @@ let%expect_test "testing STY ZEROPAGEX (0x94)" =
   let cycles = 4 in
   (* LDA $44 *)
   let pgm = [ 0x94; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -4047,7 +4064,7 @@ let%expect_test "testing STY ZEROPAGEX wrap around (0x94)" =
   let cycles = 4 in
   (* LDA $44 *)
   let pgm = [ 0x94; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0xFF; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -4069,7 +4086,7 @@ let%expect_test "testing STY ZEROPAGEX wrap around (0x94)" =
 let%expect_test "testing ASL ZEROPAGEX (0x16) Basic" =
   let cycles = 6 in
   let pgm = [ 0x16; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -4091,7 +4108,7 @@ let%expect_test "testing ASL ZEROPAGEX (0x16) Basic" =
 let%expect_test "testing ASL ZEROPAGEX (0x16) Shift out" =
   let cycles = 6 in
   let pgm = [ 0x16; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -4113,7 +4130,7 @@ let%expect_test "testing ASL ZEROPAGEX (0x16) Shift out" =
 let%expect_test "testing ASL ZEROPAGEX (0x16) Negative Flag" =
   let cycles = 6 in
   let pgm = [ 0x16; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -4135,7 +4152,7 @@ let%expect_test "testing ASL ZEROPAGEX (0x16) Negative Flag" =
 let%expect_test "testing ASL ZEROPAGEX (0x16) Wrap around" =
   let cycles = 6 in
   let pgm = [ 0x16; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0xFF; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -4157,7 +4174,7 @@ let%expect_test "testing ASL ZEROPAGEX (0x16) Wrap around" =
 let%expect_test "testing LSR ZEROPAGEX (0x56) Basic" =
   let cycles = 6 in
   let pgm = [ 0x56; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -4179,7 +4196,7 @@ let%expect_test "testing LSR ZEROPAGEX (0x56) Basic" =
 let%expect_test "testing LSR ZEROPAGEX (0x56) Shift out" =
   let cycles = 6 in
   let pgm = [ 0x56; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -4201,7 +4218,7 @@ let%expect_test "testing LSR ZEROPAGEX (0x56) Shift out" =
 let%expect_test "testing LSR ZEROPAGEX (0x56) High bit clear" =
   let cycles = 6 in
   let pgm = [ 0x56; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x01 }
@@ -4223,7 +4240,7 @@ let%expect_test "testing LSR ZEROPAGEX (0x56) High bit clear" =
 let%expect_test "testing LSR ZEROPAGEX (0x56) Wrap around" =
   let cycles = 6 in
   let pgm = [ 0x56; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0xFF; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -4245,7 +4262,7 @@ let%expect_test "testing LSR ZEROPAGEX (0x56) Wrap around" =
 let%expect_test "testing ROL ZEROPAGEX (0x36) Carry to bit 0" =
   let cycles = 6 in
   let pgm = [ 0x36; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x03 }
@@ -4267,7 +4284,7 @@ let%expect_test "testing ROL ZEROPAGEX (0x36) Carry to bit 0" =
 let%expect_test "testing ROL ZEROPAGEX (0x36) bit 7 to carry" =
   let cycles = 6 in
   let pgm = [ 0x36; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x80 }
@@ -4289,7 +4306,7 @@ let%expect_test "testing ROL ZEROPAGEX (0x36) bit 7 to carry" =
 let%expect_test "testing ROL ZEROPAGEX (0x36) Negative Flag" =
   let cycles = 6 in
   let pgm = [ 0x36; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -4311,7 +4328,7 @@ let%expect_test "testing ROL ZEROPAGEX (0x36) Negative Flag" =
 let%expect_test "testing ROL ZEROPAGEX (0x36) Wrap Around" =
   let cycles = 6 in
   let pgm = [ 0x36; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0xFF; y = 0x03; sp = 0xFD; sr = 0x03 }
@@ -4333,7 +4350,7 @@ let%expect_test "testing ROL ZEROPAGEX (0x36) Wrap Around" =
 let%expect_test "testing ROR ZEROPAGEX (0x76) carry to bit 7" =
   let cycles = 6 in
   let pgm = [ 0x76; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x03 }
@@ -4355,7 +4372,7 @@ let%expect_test "testing ROR ZEROPAGEX (0x76) carry to bit 7" =
 let%expect_test "testing ROR ZEROPAGEX (0x76) bit 0 to carry" =
   let cycles = 6 in
   let pgm = [ 0x76; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -4377,7 +4394,7 @@ let%expect_test "testing ROR ZEROPAGEX (0x76) bit 0 to carry" =
 let%expect_test "testing ROR ZEROPAGEX (0x76) Negative Flag" =
   let cycles = 6 in
   let pgm = [ 0x76; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x01 }
@@ -4399,7 +4416,7 @@ let%expect_test "testing ROR ZEROPAGEX (0x76) Negative Flag" =
 let%expect_test "testing ROR ZEROPAGEX (0x76) Wrap Around" =
   let cycles = 6 in
   let pgm = [ 0x76; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0xFF; y = 0x03; sp = 0xFD; sr = 0x03 }
@@ -4421,7 +4438,7 @@ let%expect_test "testing ROR ZEROPAGEX (0x76) Wrap Around" =
 let%expect_test "testing CMP ZEROPAGEX (0xD5) Equality " =
   let cycles = 4 in
   let pgm = [ 0xD5; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x42; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -4437,7 +4454,7 @@ let%expect_test "testing CMP ZEROPAGEX (0xD5) Equality " =
 let%expect_test "testing CMP ZEROPAGEX (0xD5) Greater than" =
   let cycles = 4 in
   let pgm = [ 0xD5; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0xFF; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -4453,7 +4470,7 @@ let%expect_test "testing CMP ZEROPAGEX (0xD5) Greater than" =
 let%expect_test "testing CMP ZEROPAGEX (0xD5) Less than" =
   let cycles = 4 in
   let pgm = [ 0xD5; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x02; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -4469,7 +4486,7 @@ let%expect_test "testing CMP ZEROPAGEX (0xD5) Less than" =
 let%expect_test "testing CMP ZEROPAGEX (0xD5) wrap around" =
   let cycles = 4 in
   let pgm = [ 0xD5; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x42; x = 0xFF; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -4485,7 +4502,7 @@ let%expect_test "testing CMP ZEROPAGEX (0xD5) wrap around" =
 let%expect_test "testing DEC ZEROPAGEX (0xD6) Dec 1" =
   let cycles = 6 in
   let pgm = [ 0xD6; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -4507,7 +4524,7 @@ let%expect_test "testing DEC ZEROPAGEX (0xD6) Dec 1" =
 let%expect_test "testing DEC ZEROPAGEX (0xD6) Set negative flag" =
   let cycles = 6 in
   let pgm = [ 0xD6; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -4529,7 +4546,7 @@ let%expect_test "testing DEC ZEROPAGEX (0xD6) Set negative flag" =
 let%expect_test "testing DEC ZEROPAGEX (0xD6) Unset negative flag" =
   let cycles = 6 in
   let pgm = [ 0xD6; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -4551,7 +4568,7 @@ let%expect_test "testing DEC ZEROPAGEX (0xD6) Unset negative flag" =
 let%expect_test "testing DEC ZEROPAGEX (0xD6) Dec to zero" =
   let cycles = 6 in
   let pgm = [ 0xD6; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -4573,7 +4590,7 @@ let%expect_test "testing DEC ZEROPAGEX (0xD6) Dec to zero" =
 let%expect_test "testing DEC ZEROPAGEX (0xD6) Wrap around" =
   let cycles = 6 in
   let pgm = [ 0xD6; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0xFF; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -4595,7 +4612,7 @@ let%expect_test "testing DEC ZEROPAGEX (0xD6) Wrap around" =
 let%expect_test "testing INC ZEROPAGEX (0xF6) Inc 1" =
   let cycles = 6 in
   let pgm = [ 0xF6; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -4617,7 +4634,7 @@ let%expect_test "testing INC ZEROPAGEX (0xF6) Inc 1" =
 let%expect_test "testing INC ZEROPAGEX (0xF6) Set negative flag" =
   let cycles = 6 in
   let pgm = [ 0xF6; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -4639,7 +4656,7 @@ let%expect_test "testing INC ZEROPAGEX (0xF6) Set negative flag" =
 let%expect_test "testing INC ZEROPAGEX (0xF6) Overflow" =
   let cycles = 6 in
   let pgm = [ 0xF6; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -4661,7 +4678,7 @@ let%expect_test "testing INC ZEROPAGEX (0xF6) Overflow" =
 let%expect_test "testing INC ZEROPAGEX (0xF6) Wrap around" =
   let cycles = 6 in
   let pgm = [ 0xF6; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0xFF; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -4683,7 +4700,7 @@ let%expect_test "testing INC ZEROPAGEX (0xF6) Wrap around" =
 let%expect_test "testing LDX ZEROPAGEY (0xB6) non-zero positive" =
   let cycles = 4 in
   let pgm = [ 0xB6; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x02; sp = 0xFD; sr = 0x00 }
@@ -4699,7 +4716,7 @@ let%expect_test "testing LDX ZEROPAGEY (0xB6) non-zero positive" =
 let%expect_test "testing LDX ZEROPAGEY (0xB6) non-zero negative" =
   let cycles = 4 in
   let pgm = [ 0xB6; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x02; sp = 0xFD; sr = 0x00 }
@@ -4715,7 +4732,7 @@ let%expect_test "testing LDX ZEROPAGEY (0xB6) non-zero negative" =
 let%expect_test "testing LDX ZEROPAGEY (0xB6) zero " =
   let cycles = 4 in
   let pgm = [ 0xB6; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x02; sp = 0xFD; sr = 0x00 }
@@ -4731,7 +4748,7 @@ let%expect_test "testing LDX ZEROPAGEY (0xB6) zero " =
 let%expect_test "testing LDX ZEROPAGEY (0xB6) wrap around" =
   let cycles = 4 in
   let pgm = [ 0xB6; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0xFF; sp = 0xFD; sr = 0x00 }
@@ -4753,7 +4770,7 @@ let%expect_test "testing LDX ZEROPAGEY (0xB6) wrap around" =
 let%expect_test "testing LDA ABSOLUTEX (0xBD) non-zero positive" =
   let cycles = 4 in
   let pgm = [ 0xBD; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -4769,7 +4786,7 @@ let%expect_test "testing LDA ABSOLUTEX (0xBD) non-zero positive" =
 let%expect_test "testing LDA ABSOLUTEX (0xBD) non-zero negative" =
   let cycles = 4 in
   let pgm = [ 0xBD; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -4785,7 +4802,7 @@ let%expect_test "testing LDA ABSOLUTEX (0xBD) non-zero negative" =
 let%expect_test "testing LDA ABSOLUTEX (0xBD) zero" =
   let cycles = 4 in
   let pgm = [ 0xBD; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -4801,7 +4818,7 @@ let%expect_test "testing LDA ABSOLUTEX (0xBD) zero" =
 let%expect_test "testing LDA ABSOLUTEX (0xBD) Page Cross" =
   let cycles = 5 in
   let pgm = [ 0xBD; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0xFF; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -4817,7 +4834,7 @@ let%expect_test "testing LDA ABSOLUTEX (0xBD) Page Cross" =
 let%expect_test "testing LDY ABSOLUTEX (0xBC) non-zero positive" =
   let cycles = 4 in
   let pgm = [ 0xBC; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -4833,7 +4850,7 @@ let%expect_test "testing LDY ABSOLUTEX (0xBC) non-zero positive" =
 let%expect_test "testing LDY ABSOLUTEX (0xBC) non-zero negative" =
   let cycles = 4 in
   let pgm = [ 0xBC; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -4849,7 +4866,7 @@ let%expect_test "testing LDY ABSOLUTEX (0xBC) non-zero negative" =
 let%expect_test "testing LDY ZEROPAGEX (0xBC) zero " =
   let cycles = 4 in
   let pgm = [ 0xBC; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -4865,7 +4882,7 @@ let%expect_test "testing LDY ZEROPAGEX (0xBC) zero " =
 let%expect_test "testing LDY ABSOLUTE (0xBC) Page Cross" =
   let cycles = 5 in
   let pgm = [ 0xBc; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0xFF; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -4881,7 +4898,7 @@ let%expect_test "testing LDY ABSOLUTE (0xBC) Page Cross" =
 let%expect_test "testing EOR ABSOLUTEX (0x5D) non-zero positive" =
   let cycles = 4 in
   let pgm = [ 0x5D; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -4897,7 +4914,7 @@ let%expect_test "testing EOR ABSOLUTEX (0x5D) non-zero positive" =
 let%expect_test "testing EOR ABSOLUTEX (0x5D) non-zero negative" =
   let cycles = 4 in
   let pgm = [ 0x5D; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -4913,7 +4930,7 @@ let%expect_test "testing EOR ABSOLUTEX (0x5D) non-zero negative" =
 let%expect_test "testing EOR ABSOLUTEX (0x5D) zero " =
   let cycles = 4 in
   let pgm = [ 0x5D; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -4929,7 +4946,7 @@ let%expect_test "testing EOR ABSOLUTEX (0x5D) zero " =
 let%expect_test "testing EOR ABSOLUTEX (0x5D) wrap around" =
   let cycles = 5 in
   let pgm = [ 0x5D; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0xFF; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -4945,7 +4962,7 @@ let%expect_test "testing EOR ABSOLUTEX (0x5D) wrap around" =
 let%expect_test "testing AND ABSOLUTEX (0x3D) non-zero positive" =
   let cycles = 4 in
   let pgm = [ 0x3D; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -4961,7 +4978,7 @@ let%expect_test "testing AND ABSOLUTEX (0x3D) non-zero positive" =
 let%expect_test "testing AND ABSOLUTEX (0x3D) non-zero negative" =
   let cycles = 4 in
   let pgm = [ 0x3D; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x81; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -4977,7 +4994,7 @@ let%expect_test "testing AND ABSOLUTEX (0x3D) non-zero negative" =
 let%expect_test "testing AND ABSOLUTEX (0x3D) zero " =
   let cycles = 4 in
   let pgm = [ 0x3D; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -4993,7 +5010,7 @@ let%expect_test "testing AND ABSOLUTEX (0x3D) zero " =
 let%expect_test "testing AND ABSOLUTEX (0x3D) Page Cross" =
   let cycles = 5 in
   let pgm = [ 0x3D; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0xFF; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -5009,7 +5026,7 @@ let%expect_test "testing AND ABSOLUTEX (0x3D) Page Cross" =
 let%expect_test "testing ORA ABSOLUTEX (0x1D) non-zero positive" =
   let cycles = 4 in
   let pgm = [ 0x1D; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -5025,7 +5042,7 @@ let%expect_test "testing ORA ABSOLUTEX (0x1D) non-zero positive" =
 let%expect_test "testing ORA ABSOLUTEX (0x1D) non-zero negative" =
   let cycles = 4 in
   let pgm = [ 0x1D; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x80; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -5041,7 +5058,7 @@ let%expect_test "testing ORA ABSOLUTEX (0x1D) non-zero negative" =
 let%expect_test "testing ORA ABSOLUTEX (0x1D) zero " =
   let cycles = 4 in
   let pgm = [ 0x1D; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x00; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -5057,7 +5074,7 @@ let%expect_test "testing ORA ABSOLUTEX (0x1D) zero " =
 let%expect_test "testing ORA ABSOLUTEX (0x1D) Page Cross" =
   let cycles = 5 in
   let pgm = [ 0x1D; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0xFF; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -5073,7 +5090,7 @@ let%expect_test "testing ORA ABSOLUTEX (0x1D) Page Cross" =
 let%expect_test "testing ADC ABSOLUTEX (0x7D) non-zero positive" =
   let cycles = 4 in
   let pgm = [ 0x7D; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -5089,7 +5106,7 @@ let%expect_test "testing ADC ABSOLUTEX (0x7D) non-zero positive" =
 let%expect_test "testing ADC ABSOLUTEX (0x7D) Incoming carry" =
   let cycles = 4 in
   let pgm = [ 0x7D; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x01 }
@@ -5105,7 +5122,7 @@ let%expect_test "testing ADC ABSOLUTEX (0x7D) Incoming carry" =
 let%expect_test "testing ADC ABSOLUTEX (0x7D) Genrating Carry " =
   let cycles = 4 in
   let pgm = [ 0x7D; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -5121,7 +5138,7 @@ let%expect_test "testing ADC ABSOLUTEX (0x7D) Genrating Carry " =
 let%expect_test "testing ADC ABSOLUTEX (0x7D) Pos+Pos=Neg" =
   let cycles = 4 in
   let pgm = [ 0x7D; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x7F; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -5137,7 +5154,7 @@ let%expect_test "testing ADC ABSOLUTEX (0x7D) Pos+Pos=Neg" =
 let%expect_test "testing ADC ABSOLUTEX (0x7D) Pos+Neg" =
   let cycles = 4 in
   let pgm = [ 0x7D; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x7F; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -5153,7 +5170,7 @@ let%expect_test "testing ADC ABSOLUTEX (0x7D) Pos+Neg" =
 let%expect_test "testing ADC ABSOLUTEX (0x7D) Neg+Neg=Pos" =
   let cycles = 4 in
   let pgm = [ 0x7D; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x80; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -5169,7 +5186,7 @@ let%expect_test "testing ADC ABSOLUTEX (0x7D) Neg+Neg=Pos" =
 let%expect_test "testing ADC ABSOLUTEX (0x7D) Page Cross" =
   let cycles = 5 in
   let pgm = [ 0x7D; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0xFF; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -5187,7 +5204,7 @@ let%expect_test "testing STA ABSOLUTEX (0x9D)" =
   let cycles = 5 in
   (* LDA $44 *)
   let pgm = [ 0x9D; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -5211,7 +5228,7 @@ let%expect_test "testing STA ABSOLUTEX (0x9D) Cross PAge" =
   let cycles = 5 in
   (* LDA $44 *)
   let pgm = [ 0x9D; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0xFF; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -5233,7 +5250,7 @@ let%expect_test "testing STA ABSOLUTEX (0x9D) Cross PAge" =
 let%expect_test "testing ASL ABSOLUTEX (0x1E) Basic" =
   let cycles = 7 in
   let pgm = [ 0x1E; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -5255,7 +5272,7 @@ let%expect_test "testing ASL ABSOLUTEX (0x1E) Basic" =
 let%expect_test "testing ASL ABSOLUTEX (0x1E) Shift out" =
   let cycles = 7 in
   let pgm = [ 0x1E; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -5277,7 +5294,7 @@ let%expect_test "testing ASL ABSOLUTEX (0x1E) Shift out" =
 let%expect_test "testing ASL ABSOLUTEX (0x1E) Negative Flag" =
   let cycles = 7 in
   let pgm = [ 0x1E; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -5299,7 +5316,7 @@ let%expect_test "testing ASL ABSOLUTEX (0x1E) Negative Flag" =
 let%expect_test "testing ASL ABSOLUTEX (0x1E) Cross Page" =
   let cycles = 7 in
   let pgm = [ 0x1E; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0xFF; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -5321,7 +5338,7 @@ let%expect_test "testing ASL ABSOLUTEX (0x1E) Cross Page" =
 let%expect_test "testing CMP ABSOLUTEX (0xDD) Equality " =
   let cycles = 4 in
   let pgm = [ 0xDD; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x42; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -5337,7 +5354,7 @@ let%expect_test "testing CMP ABSOLUTEX (0xDD) Equality " =
 let%expect_test "testing CMP ABSOLUTEX (0xDD) Greater than" =
   let cycles = 4 in
   let pgm = [ 0xDD; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0xFF; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -5353,7 +5370,7 @@ let%expect_test "testing CMP ABSOLUTEX (0xDD) Greater than" =
 let%expect_test "testing CMP ABSOLUTEX (0xDD) Less than" =
   let cycles = 4 in
   let pgm = [ 0xDD; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x02; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -5369,7 +5386,7 @@ let%expect_test "testing CMP ABSOLUTEX (0xDD) Less than" =
 let%expect_test "testing CMP ABSOLUTEX (0xDD) PAge Cross" =
   let cycles = 5 in
   let pgm = [ 0xDD; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x42; x = 0xFF; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -5385,7 +5402,7 @@ let%expect_test "testing CMP ABSOLUTEX (0xDD) PAge Cross" =
 let%expect_test "testing DEC ABSOLUTEX (0xDE) Dec 1" =
   let cycles = 7 in
   let pgm = [ 0xDE; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -5407,7 +5424,7 @@ let%expect_test "testing DEC ABSOLUTEX (0xDE) Dec 1" =
 let%expect_test "testing DEC ABSOLUTEX (0xDE) Set negative flag" =
   let cycles = 7 in
   let pgm = [ 0xDE; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -5429,7 +5446,7 @@ let%expect_test "testing DEC ABSOLUTEX (0xDE) Set negative flag" =
 let%expect_test "testing DEC ABSOLUTEX (0xDE) Unset negative flag" =
   let cycles = 7 in
   let pgm = [ 0xDE; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -5451,7 +5468,7 @@ let%expect_test "testing DEC ABSOLUTEX (0xDE) Unset negative flag" =
 let%expect_test "testing DEC ABSOLUTEX (0xDE) Dec to zero" =
   let cycles = 7 in
   let pgm = [ 0xDE; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -5473,7 +5490,7 @@ let%expect_test "testing DEC ABSOLUTEX (0xDE) Dec to zero" =
 let%expect_test "testing DEC ABSOLUTEX (0xDE) Page Cross" =
   let cycles = 7 in
   let pgm = [ 0xDE; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0xFF; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -5495,7 +5512,7 @@ let%expect_test "testing DEC ABSOLUTEX (0xDE) Page Cross" =
 let%expect_test "testing INC ABSOLUTEX (0xFE) Inc 1" =
   let cycles = 7 in
   let pgm = [ 0xFE; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -5517,7 +5534,7 @@ let%expect_test "testing INC ABSOLUTEX (0xFE) Inc 1" =
 let%expect_test "testing INC ABSOLUTEX (0xFE) Set negative flag" =
   let cycles = 7 in
   let pgm = [ 0xFE; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -5539,7 +5556,7 @@ let%expect_test "testing INC ABSOLUTEX (0xFE) Set negative flag" =
 let%expect_test "testing INC ABSOLUTEX (0xFE) Overflow" =
   let cycles = 7 in
   let pgm = [ 0xFE; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -5561,7 +5578,7 @@ let%expect_test "testing INC ABSOLUTEX (0xFE) Overflow" =
 let%expect_test "testing INC ABSOLUTEX (0xFE) Page Cross" =
   let cycles = 7 in
   let pgm = [ 0xFE; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0xFF; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -5583,7 +5600,7 @@ let%expect_test "testing INC ABSOLUTEX (0xFE) Page Cross" =
 let%expect_test "testing ROR ABSOLUTEX (0x7E) carry to bit 7" =
   let cycles = 7 in
   let pgm = [ 0x7E; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x03 }
@@ -5605,7 +5622,7 @@ let%expect_test "testing ROR ABSOLUTEX (0x7E) carry to bit 7" =
 let%expect_test "testing ROR ABSOLUTEX (0x7E) bit 0 to carry" =
   let cycles = 7 in
   let pgm = [ 0x7E; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -5627,7 +5644,7 @@ let%expect_test "testing ROR ABSOLUTEX (0x7E) bit 0 to carry" =
 let%expect_test "testing ROR ABSOLUTEX (0x7E) Negative Flag" =
   let cycles = 7 in
   let pgm = [ 0x7E; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x01 }
@@ -5649,7 +5666,7 @@ let%expect_test "testing ROR ABSOLUTEX (0x7E) Negative Flag" =
 let%expect_test "testing ROR ABSOLUTEX (0x7E) Page Cross" =
   let cycles = 7 in
   let pgm = [ 0x7E; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0xFF; y = 0x03; sp = 0xFD; sr = 0x03 }
@@ -5671,7 +5688,7 @@ let%expect_test "testing ROR ABSOLUTEX (0x7E) Page Cross" =
 let%expect_test "testing ROL ABSOLUTEX (0x3E) Carry to bit 0" =
   let cycles = 7 in
   let pgm = [ 0x3E; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x03 }
@@ -5693,7 +5710,7 @@ let%expect_test "testing ROL ABSOLUTEX (0x3E) Carry to bit 0" =
 let%expect_test "testing ROL ABSOLUTEX (0x3E) bit 7 to carry" =
   let cycles = 7 in
   let pgm = [ 0x3E; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x80 }
@@ -5715,7 +5732,7 @@ let%expect_test "testing ROL ABSOLUTEX (0x3E) bit 7 to carry" =
 let%expect_test "testing ROL ABSOLUTEX (0x3E) Negative Flag" =
   let cycles = 7 in
   let pgm = [ 0x3E; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -5737,7 +5754,7 @@ let%expect_test "testing ROL ABSOLUTEX (0x3E) Negative Flag" =
 let%expect_test "testing ROL ABSOLUTEX (0x3E) Wrap Around" =
   let cycles = 7 in
   let pgm = [ 0x3E; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0xFF; y = 0x03; sp = 0xFD; sr = 0x03 }
@@ -5759,7 +5776,7 @@ let%expect_test "testing ROL ABSOLUTEX (0x3E) Wrap Around" =
 let%expect_test "testing LSR ABSOLUTEX (0x5E) Basic" =
   let cycles = 7 in
   let pgm = [ 0x5E; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -5781,7 +5798,7 @@ let%expect_test "testing LSR ABSOLUTEX (0x5E) Basic" =
 let%expect_test "testing LSR ABSOLUTEX (0x5E) Shift out" =
   let cycles = 7 in
   let pgm = [ 0x5E; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -5803,7 +5820,7 @@ let%expect_test "testing LSR ABSOLUTEX (0x5E) Shift out" =
 let%expect_test "testing LSR ABSOLUTEX (0x5E) High bit clear" =
   let cycles = 7 in
   let pgm = [ 0x5E; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x01 }
@@ -5825,7 +5842,7 @@ let%expect_test "testing LSR ABSOLUTEX (0x5E) High bit clear" =
 let%expect_test "testing LSR ABSOLUTEX (0x5E) Page Cross" =
   let cycles = 7 in
   let pgm = [ 0x5E; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0xFF; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -5847,7 +5864,7 @@ let%expect_test "testing LSR ABSOLUTEX (0x5E) Page Cross" =
 let%expect_test "testing ADC ABSOLUTEY (0x79) non-zero positive" =
   let cycles = 4 in
   let pgm = [ 0x79; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -5863,7 +5880,7 @@ let%expect_test "testing ADC ABSOLUTEY (0x79) non-zero positive" =
 let%expect_test "testing ADC ABSOLUTEY (0x79) Incoming carry" =
   let cycles = 4 in
   let pgm = [ 0x79; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x01 }
@@ -5879,7 +5896,7 @@ let%expect_test "testing ADC ABSOLUTEY (0x79) Incoming carry" =
 let%expect_test "testing ADC ABSOLUTEY (0x79) Genrating Carry " =
   let cycles = 4 in
   let pgm = [ 0x79; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -5895,7 +5912,7 @@ let%expect_test "testing ADC ABSOLUTEY (0x79) Genrating Carry " =
 let%expect_test "testing ADC ABSOLUTEY (0x79) Pos+Pos=Neg" =
   let cycles = 4 in
   let pgm = [ 0x79; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x7F; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -5911,7 +5928,7 @@ let%expect_test "testing ADC ABSOLUTEY (0x79) Pos+Pos=Neg" =
 let%expect_test "testing ADC ABSOLUTEY (0x79) Pos+Neg" =
   let cycles = 4 in
   let pgm = [ 0x79; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x7F; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -5927,7 +5944,7 @@ let%expect_test "testing ADC ABSOLUTEY (0x79) Pos+Neg" =
 let%expect_test "testing ADC ABSOLUTEY (0x79) Neg+Neg=Pos" =
   let cycles = 4 in
   let pgm = [ 0x79; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x80; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -5943,7 +5960,7 @@ let%expect_test "testing ADC ABSOLUTEY (0x79) Neg+Neg=Pos" =
 let%expect_test "testing ADC ABSOLUTEY (0x79) Page Cross" =
   let cycles = 5 in
   let pgm = [ 0x79; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0xFF; sp = 0xFD; sr = 0x00 }
@@ -5959,7 +5976,7 @@ let%expect_test "testing ADC ABSOLUTEY (0x79) Page Cross" =
 let%expect_test "testing STA ABSOLUTEY (0x99)" =
   let cycles = 5 in
   let pgm = [ 0x99; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -5981,7 +5998,7 @@ let%expect_test "testing STA ABSOLUTEY (0x99)" =
 let%expect_test "testing STA ABSOLUTEY (0x99) Cross PAge" =
   let cycles = 5 in
   let pgm = [ 0x99; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0xFF; sp = 0xFD; sr = 0x00 }
@@ -6003,7 +6020,7 @@ let%expect_test "testing STA ABSOLUTEY (0x99) Cross PAge" =
 let%expect_test "testing ORA ABSOLUTEY (0x19) non-zero positive" =
   let cycles = 4 in
   let pgm = [ 0x19; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -6019,7 +6036,7 @@ let%expect_test "testing ORA ABSOLUTEY (0x19) non-zero positive" =
 let%expect_test "testing ORA ABSOLUTEY (0x19) non-zero negative" =
   let cycles = 4 in
   let pgm = [ 0x19; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x80; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -6035,7 +6052,7 @@ let%expect_test "testing ORA ABSOLUTEY (0x19) non-zero negative" =
 let%expect_test "testing ORA ABSOLUTEY (0x19) zero " =
   let cycles = 4 in
   let pgm = [ 0x19; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x00; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -6051,7 +6068,7 @@ let%expect_test "testing ORA ABSOLUTEY (0x19) zero " =
 let%expect_test "testing ORA ABSOLUTEY (0x19) Page Cross" =
   let cycles = 5 in
   let pgm = [ 0x19; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0xFF; sp = 0xFD; sr = 0x00 }
@@ -6067,7 +6084,7 @@ let%expect_test "testing ORA ABSOLUTEY (0x19) Page Cross" =
 let%expect_test "testing AND ABSOLUTEY (0x39) non-zero positive" =
   let cycles = 4 in
   let pgm = [ 0x39; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -6083,7 +6100,7 @@ let%expect_test "testing AND ABSOLUTEY (0x39) non-zero positive" =
 let%expect_test "testing AND ABSOLUTEY (0x39) non-zero negative" =
   let cycles = 4 in
   let pgm = [ 0x39; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x81; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -6099,7 +6116,7 @@ let%expect_test "testing AND ABSOLUTEY (0x39) non-zero negative" =
 let%expect_test "testing AND ABSOLUTEY (0x39) zero " =
   let cycles = 4 in
   let pgm = [ 0x39; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -6115,7 +6132,7 @@ let%expect_test "testing AND ABSOLUTEY (0x39) zero " =
 let%expect_test "testing AND ABSOLUTEY (0x39) Page Cross" =
   let cycles = 5 in
   let pgm = [ 0x39; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0xFF; sp = 0xFD; sr = 0x00 }
@@ -6131,7 +6148,7 @@ let%expect_test "testing AND ABSOLUTEY (0x39) Page Cross" =
 let%expect_test "testing EOR ABSOLUTEY (0x59) non-zero positive" =
   let cycles = 4 in
   let pgm = [ 0x59; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -6147,7 +6164,7 @@ let%expect_test "testing EOR ABSOLUTEY (0x59) non-zero positive" =
 let%expect_test "testing EOR ABSOLUTEY (0x59) non-zero negative" =
   let cycles = 4 in
   let pgm = [ 0x59; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -6163,7 +6180,7 @@ let%expect_test "testing EOR ABSOLUTEY (0x59) non-zero negative" =
 let%expect_test "testing EOR ABSOLUTEY (0x59) zero " =
   let cycles = 4 in
   let pgm = [ 0x59; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -6179,7 +6196,7 @@ let%expect_test "testing EOR ABSOLUTEY (0x59) zero " =
 let%expect_test "testing EOR ABSOLUTEY (0x59) Page Cross" =
   let cycles = 5 in
   let pgm = [ 0x59; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0xFF; sp = 0xFD; sr = 0x00 }
@@ -6195,7 +6212,7 @@ let%expect_test "testing EOR ABSOLUTEY (0x59) Page Cross" =
 let%expect_test "testing CMP ABSOLUTEY (0xD9) Equality " =
   let cycles = 4 in
   let pgm = [ 0xD9; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x42; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -6211,7 +6228,7 @@ let%expect_test "testing CMP ABSOLUTEY (0xD9) Equality " =
 let%expect_test "testing CMP ABSOLUTEY (0xD9) Greater than" =
   let cycles = 4 in
   let pgm = [ 0xD9; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0xFF; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -6227,7 +6244,7 @@ let%expect_test "testing CMP ABSOLUTEY (0xD9) Greater than" =
 let%expect_test "testing CMP ABSOLUTEY (0xD9) Less than" =
   let cycles = 4 in
   let pgm = [ 0xD9; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x02; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -6243,7 +6260,7 @@ let%expect_test "testing CMP ABSOLUTEY (0xD9) Less than" =
 let%expect_test "testing CMP ABSOLUTEY (0xD9) PAge Cross" =
   let cycles = 5 in
   let pgm = [ 0xD9; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x42; x = 0x02; y = 0xFF; sp = 0xFD; sr = 0x00 }
@@ -6259,7 +6276,7 @@ let%expect_test "testing CMP ABSOLUTEY (0xD9) PAge Cross" =
 let%expect_test "testing LDA ABSOLUTEX (0xB9) non-zero positive" =
   let cycles = 4 in
   let pgm = [ 0xB9; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -6275,7 +6292,7 @@ let%expect_test "testing LDA ABSOLUTEX (0xB9) non-zero positive" =
 let%expect_test "testing LDA ABSOLITEX (0xB9) non-zero negative" =
   let cycles = 4 in
   let pgm = [ 0xB9; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -6291,7 +6308,7 @@ let%expect_test "testing LDA ABSOLITEX (0xB9) non-zero negative" =
 let%expect_test "testing LDA ABSOLITEX (0xB9) zero" =
   let cycles = 4 in
   let pgm = [ 0xB9; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -6307,7 +6324,7 @@ let%expect_test "testing LDA ABSOLITEX (0xB9) zero" =
 let%expect_test "testing LDA ABSOLITEX (0xB9) Page Cross" =
   let cycles = 5 in
   let pgm = [ 0xB9; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0xFF; sp = 0xFD; sr = 0x00 }
@@ -6323,7 +6340,7 @@ let%expect_test "testing LDA ABSOLITEX (0xB9) Page Cross" =
 let%expect_test "testing LDX ABSOLUTEY (0xBE) non-zero positive" =
   let cycles = 4 in
   let pgm = [ 0xBE; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -6339,7 +6356,7 @@ let%expect_test "testing LDX ABSOLUTEY (0xBE) non-zero positive" =
 let%expect_test "testing LDX ABSOLUTEY (0xBE) non-zero negative" =
   let cycles = 4 in
   let pgm = [ 0xBE; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -6355,7 +6372,7 @@ let%expect_test "testing LDX ABSOLUTEY (0xBE) non-zero negative" =
 let%expect_test "testing LDX ABSOLUTEY (0xBE) zero " =
   let cycles = 4 in
   let pgm = [ 0xBE; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -6371,7 +6388,7 @@ let%expect_test "testing LDX ABSOLUTEY (0xBE) zero " =
 let%expect_test "testing LDX ABSOLUTEY (0xBE) Page Cross" =
   let cycles = 5 in
   let pgm = [ 0xBE; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0xFF; sp = 0xFD; sr = 0x00 }
@@ -6387,7 +6404,7 @@ let%expect_test "testing LDX ABSOLUTEY (0xBE) Page Cross" =
 let%expect_test "testing SBC ABSOLUTEY (0xF9) No Borrow" =
   let cycles = 4 in
   let pgm = [ 0xF9; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x05; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x01 }
@@ -6403,7 +6420,7 @@ let%expect_test "testing SBC ABSOLUTEY (0xF9) No Borrow" =
 let%expect_test "testing SBC ABSOLUTEY (0xF9) with borrow" =
   let cycles = 4 in
   let pgm = [ 0xF9; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x05; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -6419,7 +6436,7 @@ let%expect_test "testing SBC ABSOLUTEY (0xF9) with borrow" =
 let%expect_test "testing SBC ABSOLUTEY (0xF9) Underflow" =
   let cycles = 4 in
   let pgm = [ 0xF9; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x01 }
@@ -6435,7 +6452,7 @@ let%expect_test "testing SBC ABSOLUTEY (0xF9) Underflow" =
 let%expect_test "testing SBC ABSOLUTEY (0xF9) Overflow" =
   let cycles = 4 in
   let pgm = [ 0xF9; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x80; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x01 }
@@ -6451,7 +6468,7 @@ let%expect_test "testing SBC ABSOLUTEY (0xF9) Overflow" =
 let%expect_test "testing SBC ABSOLUTEY (0xF9) Page Cross" =
   let cycles = 5 in
   let pgm = [ 0xF9; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x05; x = 0x02; y = 0xFF; sp = 0xFD; sr = 0x01 }
@@ -6467,7 +6484,7 @@ let%expect_test "testing SBC ABSOLUTEY (0xF9) Page Cross" =
 let%expect_test "testing SBC ABSOLUTE (0xED) No Borrow" =
   let cycles = 4 in
   let pgm = [ 0xED; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x05; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x01 }
@@ -6483,7 +6500,7 @@ let%expect_test "testing SBC ABSOLUTE (0xED) No Borrow" =
 let%expect_test "testing SBC ABSOLUTE (0xED) with borrow" =
   let cycles = 4 in
   let pgm = [ 0xED; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x05; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -6499,7 +6516,7 @@ let%expect_test "testing SBC ABSOLUTE (0xED) with borrow" =
 let%expect_test "testing SBC ABSOLUTE (0xED) Underflow" =
   let cycles = 4 in
   let pgm = [ 0xED; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x01 }
@@ -6515,7 +6532,7 @@ let%expect_test "testing SBC ABSOLUTE (0xED) Underflow" =
 let%expect_test "testing SBC ABSOLUTE (0xED) Overflow" =
   let cycles = 4 in
   let pgm = [ 0xED; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x80; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x01 }
@@ -6531,7 +6548,7 @@ let%expect_test "testing SBC ABSOLUTE (0xED) Overflow" =
 let%expect_test "testing SBC ABSOLUTEX (0xFD) No Borrow" =
   let cycles = 4 in
   let pgm = [ 0xFD; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x05; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x01 }
@@ -6547,7 +6564,7 @@ let%expect_test "testing SBC ABSOLUTEX (0xFD) No Borrow" =
 let%expect_test "testing SBC ABSOLUTEX (0xFD) with borrow" =
   let cycles = 4 in
   let pgm = [ 0xFD; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x05; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -6563,7 +6580,7 @@ let%expect_test "testing SBC ABSOLUTEX (0xFD) with borrow" =
 let%expect_test "testing SBC ABSOLUTEX (0xFD) Underflow" =
   let cycles = 4 in
   let pgm = [ 0xFD; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x01 }
@@ -6579,7 +6596,7 @@ let%expect_test "testing SBC ABSOLUTEX (0xFD) Underflow" =
 let%expect_test "testing SBC ABSOLUTEX (0xFD) Overflow" =
   let cycles = 4 in
   let pgm = [ 0xFD; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x80; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x01 }
@@ -6595,7 +6612,7 @@ let%expect_test "testing SBC ABSOLUTEX (0xFD) Overflow" =
 let%expect_test "testing SBC ABSOLUTEX (0xFD) Page Cross" =
   let cycles = 5 in
   let pgm = [ 0xFD; 0x44; 0x69 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x05; x = 0xFF; y = 0x03; sp = 0xFD; sr = 0x01 }
@@ -6611,7 +6628,7 @@ let%expect_test "testing SBC ABSOLUTEX (0xFD) Page Cross" =
 let%expect_test "testing SBC Binary IMMEDIATE (0xE9) No Borrow" =
   let cycles = 2 in
   let pgm = [ 0xE9; 0x02 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x05; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x01 }
@@ -6626,7 +6643,7 @@ let%expect_test "testing SBC Binary IMMEDIATE (0xE9) No Borrow" =
 let%expect_test "testing SBC Binary IMMEDIATE (0xE9) With Borrow" =
   let cycles = 2 in
   let pgm = [ 0xE9; 0x02 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x05; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -6641,7 +6658,7 @@ let%expect_test "testing SBC Binary IMMEDIATE (0xE9) With Borrow" =
 let%expect_test "testing SBC Binary IMMEDIATE (0xE9) Underflow" =
   let cycles = 2 in
   let pgm = [ 0xE9; 0x02 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x01 }
@@ -6656,7 +6673,7 @@ let%expect_test "testing SBC Binary IMMEDIATE (0xE9) Underflow" =
 let%expect_test "testing SBC Binary IMMEDIATE (0xE9) Overflow" =
   let cycles = 2 in
   let pgm = [ 0xE9; 0x01 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x80; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x01 }
@@ -6671,7 +6688,7 @@ let%expect_test "testing SBC Binary IMMEDIATE (0xE9) Overflow" =
 let%expect_test "testing LDA INDEXEDINDIRECT (0xA1) non-zero positive" =
   let cycles = 6 in
   let pgm = [ 0xA1; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -6689,7 +6706,7 @@ let%expect_test "testing LDA INDEXEDINDIRECT (0xA1) non-zero positive" =
 let%expect_test "testing LDA INDEXEDINDIRECT (0xA1) non-zero negative" =
   let cycles = 6 in
   let pgm = [ 0xA1; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -6707,7 +6724,7 @@ let%expect_test "testing LDA INDEXEDINDIRECT (0xA1) non-zero negative" =
 let%expect_test "testing LDA INDEXEDINDIRECT (0xA1) zero" =
   let cycles = 6 in
   let pgm = [ 0xA1; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -6725,7 +6742,7 @@ let%expect_test "testing LDA INDEXEDINDIRECT (0xA1) zero" =
 let%expect_test "testing LDA INDEXEDINDIRECT (0xA1) End of page" =
   let cycles = 6 in
   let pgm = [ 0xA1; 0xFD ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -6743,7 +6760,7 @@ let%expect_test "testing LDA INDEXEDINDIRECT (0xA1) End of page" =
 let%expect_test "testing EOR INDEXEDINDIRECT (0x41) non-zero positive" =
   let cycles = 6 in
   let pgm = [ 0x41; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -6761,7 +6778,7 @@ let%expect_test "testing EOR INDEXEDINDIRECT (0x41) non-zero positive" =
 let%expect_test "testing EOR INDEXEDINDIRECT (0x41) non-zero negative" =
   let cycles = 6 in
   let pgm = [ 0x41; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -6779,7 +6796,7 @@ let%expect_test "testing EOR INDEXEDINDIRECT (0x41) non-zero negative" =
 let%expect_test "testing EOR INDEXEDINDIRECT (0x41) zero" =
   let cycles = 6 in
   let pgm = [ 0x41; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -6797,7 +6814,7 @@ let%expect_test "testing EOR INDEXEDINDIRECT (0x41) zero" =
 let%expect_test "testing EOR INDEXEDINDIRECT (0x41) End of page" =
   let cycles = 6 in
   let pgm = [ 0x41; 0xFD ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -6815,7 +6832,7 @@ let%expect_test "testing EOR INDEXEDINDIRECT (0x41) End of page" =
 let%expect_test "testing AND INDEXEDINDIRECT (0x21) non-zero positive" =
   let cycles = 6 in
   let pgm = [ 0x21; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -6833,7 +6850,7 @@ let%expect_test "testing AND INDEXEDINDIRECT (0x21) non-zero positive" =
 let%expect_test "testing AND INDEXEDINDIRECT (0x21) non-zero negative" =
   let cycles = 6 in
   let pgm = [ 0x21; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x81; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -6851,7 +6868,7 @@ let%expect_test "testing AND INDEXEDINDIRECT (0x21) non-zero negative" =
 let%expect_test "testing AND INDEXEDINDIRECT (0x21) zero" =
   let cycles = 6 in
   let pgm = [ 0x21; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -6869,7 +6886,7 @@ let%expect_test "testing AND INDEXEDINDIRECT (0x21) zero" =
 let%expect_test "testing AND INDEXEDINDIRECT (0x21) End of page" =
   let cycles = 6 in
   let pgm = [ 0x21; 0xFD ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -6887,7 +6904,7 @@ let%expect_test "testing AND INDEXEDINDIRECT (0x21) End of page" =
 let%expect_test "testing ORA INDEXEDINDIRECT (0x01) non-zero positive" =
   let cycles = 6 in
   let pgm = [ 0x01; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -6905,7 +6922,7 @@ let%expect_test "testing ORA INDEXEDINDIRECT (0x01) non-zero positive" =
 let%expect_test "testing ORA INDEXEDINDIRECT (0x01) non-zero negative" =
   let cycles = 6 in
   let pgm = [ 0x01; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x80; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -6923,7 +6940,7 @@ let%expect_test "testing ORA INDEXEDINDIRECT (0x01) non-zero negative" =
 let%expect_test "testing ORA INDEXEDINDIRECT (0x01) zero" =
   let cycles = 6 in
   let pgm = [ 0x01; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x00; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -6941,7 +6958,7 @@ let%expect_test "testing ORA INDEXEDINDIRECT (0x01) zero" =
 let%expect_test "testing ORA INDEXEDINDIRECT (0x01) End of page" =
   let cycles = 6 in
   let pgm = [ 0x01; 0xFD ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -6959,7 +6976,7 @@ let%expect_test "testing ORA INDEXEDINDIRECT (0x01) End of page" =
 let%expect_test "testing ADC INDEXEDINDIRECT (0x61) non-zero positive" =
   let cycles = 6 in
   let pgm = [ 0x61; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -6977,7 +6994,7 @@ let%expect_test "testing ADC INDEXEDINDIRECT (0x61) non-zero positive" =
 let%expect_test "testing ADC INDEXEDINDIRECT (0x61) Incoming carry" =
   let cycles = 6 in
   let pgm = [ 0x61; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x01 }
@@ -6995,7 +7012,7 @@ let%expect_test "testing ADC INDEXEDINDIRECT (0x61) Incoming carry" =
 let%expect_test "testing ADC INDEXEDINDIRECT (0x61) Generating Carry" =
   let cycles = 6 in
   let pgm = [ 0x61; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -7013,7 +7030,7 @@ let%expect_test "testing ADC INDEXEDINDIRECT (0x61) Generating Carry" =
 let%expect_test "testing ADC INDEXEDINDIRECT (0x61) Pos+Pos=Neg" =
   let cycles = 6 in
   let pgm = [ 0x61; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x7F; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -7031,7 +7048,7 @@ let%expect_test "testing ADC INDEXEDINDIRECT (0x61) Pos+Pos=Neg" =
 let%expect_test "testing ADC INDEXEDINDIRECT (0x61) Pos+Neg" =
   let cycles = 6 in
   let pgm = [ 0x61; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x7F; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -7049,7 +7066,7 @@ let%expect_test "testing ADC INDEXEDINDIRECT (0x61) Pos+Neg" =
 let%expect_test "testing ADC INDEXEDINDIRECT (0x61) Neg+Neg=Pos" =
   let cycles = 6 in
   let pgm = [ 0x61; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x80; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -7067,7 +7084,7 @@ let%expect_test "testing ADC INDEXEDINDIRECT (0x61) Neg+Neg=Pos" =
 let%expect_test "testing ADC INDEXEDINDIRECT (0x61) End of Page" =
   let cycles = 6 in
   let pgm = [ 0x61; 0xFD ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -7085,7 +7102,7 @@ let%expect_test "testing ADC INDEXEDINDIRECT (0x61) End of Page" =
 let%expect_test "testing STA INDEXEDINDIRECT (0x81)" =
   let cycles = 6 in
   let pgm = [ 0x81; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -7109,7 +7126,7 @@ let%expect_test "testing STA INDEXEDINDIRECT (0x81)" =
 let%expect_test "testing CMP INDEXEDINDIRECT (0xC1) Equality" =
   let cycles = 6 in
   let pgm = [ 0xC1; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x42; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -7127,7 +7144,7 @@ let%expect_test "testing CMP INDEXEDINDIRECT (0xC1) Equality" =
 let%expect_test "testing CMP INDEXEDINDIRECT (0xC1) Greater Than" =
   let cycles = 6 in
   let pgm = [ 0xC1; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0xFF; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -7145,7 +7162,7 @@ let%expect_test "testing CMP INDEXEDINDIRECT (0xC1) Greater Than" =
 let%expect_test "testing CMP INDEXEDINDIRECT (0xC1) Less Than" =
   let cycles = 6 in
   let pgm = [ 0xC1; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x02; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -7163,7 +7180,7 @@ let%expect_test "testing CMP INDEXEDINDIRECT (0xC1) Less Than" =
 let%expect_test "testing CMP INDEXEDINDIRECT (0xC1) End of Page" =
   let cycles = 6 in
   let pgm = [ 0xC1; 0xFD ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x42; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -7181,7 +7198,7 @@ let%expect_test "testing CMP INDEXEDINDIRECT (0xC1) End of Page" =
 let%expect_test "testing SBC INDEXEDINDIRECT (0xE1) No Borrow" =
   let cycles = 6 in
   let pgm = [ 0xE1; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x05; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x01 }
@@ -7199,7 +7216,7 @@ let%expect_test "testing SBC INDEXEDINDIRECT (0xE1) No Borrow" =
 let%expect_test "testing SBC INDEXEDINDIRECT (0xE1) With  Borrow" =
   let cycles = 6 in
   let pgm = [ 0xE1; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x05; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
@@ -7217,7 +7234,7 @@ let%expect_test "testing SBC INDEXEDINDIRECT (0xE1) With  Borrow" =
 let%expect_test "testing SBC INDEXEDINDIRECT (0xE1) Underflow" =
   let cycles = 6 in
   let pgm = [ 0xE1; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x01 }
@@ -7235,7 +7252,7 @@ let%expect_test "testing SBC INDEXEDINDIRECT (0xE1) Underflow" =
 let%expect_test "testing SBC INDEXEDINDIRECT (0xE1) Overflow" =
   let cycles = 6 in
   let pgm = [ 0xE1; 0x44 ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x80; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x01 }
@@ -7253,7 +7270,7 @@ let%expect_test "testing SBC INDEXEDINDIRECT (0xE1) Overflow" =
 let%expect_test "testing SBC INDEXEDINDIRECT (0xE1) End of Page" =
   let cycles = 6 in
   let pgm = [ 0xE1; 0xFD ] in
-  let computer = init_test_computer pgm in
+  let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu = { computer.cpu with a = 0x05; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x01 }
@@ -7266,4 +7283,1393 @@ let%expect_test "testing SBC INDEXEDINDIRECT (0xE1) End of Page" =
   dump_last_execution executions;
   [%expect
     {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x03 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizC pc: 0x1002 inst: SBC ($%02X,X) |}]
+;;
+
+let%expect_test "testing LDA INDIRECTINDEXED (0xB1) non-zero positive" =
+  let cycles = 5 in
+  let pgm = [ 0xB1; 0x44 ] in
+  let computer = init_test_computer 0x1000 pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
+    }
+  in
+  computer.banks.(0x44) <- 0x10;
+  computer.banks.(0x45) <- 0xC0;
+  computer.banks.(0xC013) <- 0x04;
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x04 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: LDA ($%02X),Y |}]
+;;
+
+let%expect_test "testing LDA INDIRECTINDEXED (0xB1) Page Cross" =
+  let cycles = 6 in
+  let pgm = [ 0xB1; 0x44 ] in
+  let computer = init_test_computer 0x1000 pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0xFF; sp = 0xFD; sr = 0x00 }
+    }
+  in
+  computer.banks.(0x44) <- 0x10;
+  computer.banks.(0x45) <- 0xC0;
+  computer.banks.(0xC10F) <- 0x04;
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x04 x: 0x02 y: 0xFF sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: LDA ($%02X),Y |}]
+;;
+
+let%expect_test "testing LDA INDIRECTINDEXED (0xB1) non-zero negative" =
+  let cycles = 5 in
+  let pgm = [ 0xB1; 0x44 ] in
+  let computer = init_test_computer 0x1000 pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
+    }
+  in
+  computer.banks.(0x44) <- 0x10;
+  computer.banks.(0x45) <- 0xC0;
+  computer.banks.(0xC013) <- 0x84;
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x84 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1002 inst: LDA ($%02X),Y |}]
+;;
+
+let%expect_test "testing LDA INDIRECTINDEXED (0xB1) zero" =
+  let cycles = 5 in
+  let pgm = [ 0xB1; 0x44 ] in
+  let computer = init_test_computer 0x1000 pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
+    }
+  in
+  computer.banks.(0x44) <- 0x10;
+  computer.banks.(0x45) <- 0xC0;
+  computer.banks.(0xC013) <- 0x00;
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x00 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZc pc: 0x1002 inst: LDA ($%02X),Y |}]
+;;
+
+let%expect_test "testing EOR INDIRECTINDEXED (0x51) non-zero positive" =
+  let cycles = 5 in
+  let pgm = [ 0x51; 0x44 ] in
+  let computer = init_test_computer 0x1000 pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
+    }
+  in
+  computer.banks.(0x44) <- 0x10;
+  computer.banks.(0x45) <- 0xC0;
+  computer.banks.(0xC013) <- 0x04;
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x05 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: EOR ($%02X),Y |}]
+;;
+
+let%expect_test "testing EOR INDIRECTINDEXED (0x51) Page Cross" =
+  let cycles = 6 in
+  let pgm = [ 0x51; 0x44 ] in
+  let computer = init_test_computer 0x1000 pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0xFF; sp = 0xFD; sr = 0x00 }
+    }
+  in
+  computer.banks.(0x44) <- 0x10;
+  computer.banks.(0x45) <- 0xC0;
+  computer.banks.(0xC10F) <- 0x04;
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x05 x: 0x02 y: 0xFF sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: EOR ($%02X),Y |}]
+;;
+
+let%expect_test "testing EOR INDIRECTINDEXED (0x51) non-zero negative" =
+  let cycles = 5 in
+  let pgm = [ 0x51; 0x44 ] in
+  let computer = init_test_computer 0x1000 pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
+    }
+  in
+  computer.banks.(0x44) <- 0x10;
+  computer.banks.(0x45) <- 0xC0;
+  computer.banks.(0xC013) <- 0x84;
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x85 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1002 inst: EOR ($%02X),Y |}]
+;;
+
+let%expect_test "testing EOR INDIRECTINDEXED (0x51) zero" =
+  let cycles = 5 in
+  let pgm = [ 0x51; 0x44 ] in
+  let computer = init_test_computer 0x1000 pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
+    }
+  in
+  computer.banks.(0x44) <- 0x10;
+  computer.banks.(0x45) <- 0xC0;
+  computer.banks.(0xC013) <- 0x01;
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x00 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZc pc: 0x1002 inst: EOR ($%02X),Y |}]
+;;
+
+let%expect_test "testing AND INDIRECTINDEXED (0x31) non-zero positive" =
+  let cycles = 5 in
+  let pgm = [ 0x31; 0x44 ] in
+  let computer = init_test_computer 0x1000 pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
+    }
+  in
+  computer.banks.(0x44) <- 0x10;
+  computer.banks.(0x45) <- 0xC0;
+  computer.banks.(0xC013) <- 0x05;
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: AND ($%02X),Y |}]
+;;
+
+let%expect_test "testing AND INDIRECTINDEXED (0x31) page cross" =
+  let cycles = 6 in
+  let pgm = [ 0x31; 0x44 ] in
+  let computer = init_test_computer 0x1000 pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0xFF; sp = 0xFD; sr = 0x00 }
+    }
+  in
+  computer.banks.(0x44) <- 0x10;
+  computer.banks.(0x45) <- 0xC0;
+  computer.banks.(0xC10F) <- 0x05;
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0xFF sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: AND ($%02X),Y |}]
+;;
+
+let%expect_test "testing AND INDIRECTINDEXED (0x31) non-zero negative" =
+  let cycles = 5 in
+  let pgm = [ 0x31; 0x44 ] in
+  let computer = init_test_computer 0x1000 pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x81; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
+    }
+  in
+  computer.banks.(0x44) <- 0x10;
+  computer.banks.(0x45) <- 0xC0;
+  computer.banks.(0xC013) <- 0x84;
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x80 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1002 inst: AND ($%02X),Y |}]
+;;
+
+let%expect_test "testing AND INDEXEDINDIRECT (0x31) zero" =
+  let cycles = 5 in
+  let pgm = [ 0x31; 0x44 ] in
+  let computer = init_test_computer 0x1000 pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
+    }
+  in
+  computer.banks.(0x44) <- 0x10;
+  computer.banks.(0x45) <- 0xC0;
+  computer.banks.(0xC013) <- 0x02;
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x00 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZc pc: 0x1002 inst: AND ($%02X),Y |}]
+;;
+
+let%expect_test "testing ORA INDIRECTINDEXED (0x11) non-zero positive" =
+  let cycles = 5 in
+  let pgm = [ 0x11; 0x44 ] in
+  let computer = init_test_computer 0x1000 pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
+    }
+  in
+  computer.banks.(0x44) <- 0x10;
+  computer.banks.(0x45) <- 0xC0;
+  computer.banks.(0xC013) <- 0x04;
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x05 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: ORA ($%02X),Y |}]
+;;
+
+let%expect_test "testing ORA INDIRECTINDEXED (0x11) page cross" =
+  let cycles = 6 in
+  let pgm = [ 0x11; 0x44 ] in
+  let computer = init_test_computer 0x1000 pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0xFF; sp = 0xFD; sr = 0x00 }
+    }
+  in
+  computer.banks.(0x44) <- 0x10;
+  computer.banks.(0x45) <- 0xC0;
+  computer.banks.(0xC10F) <- 0x04;
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x05 x: 0x02 y: 0xFF sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: ORA ($%02X),Y |}]
+;;
+
+let%expect_test "testing ORA INDIRECTINDEXED (0x11) non-zero negative" =
+  let cycles = 5 in
+  let pgm = [ 0x11; 0x44 ] in
+  let computer = init_test_computer 0x1000 pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x80; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
+    }
+  in
+  computer.banks.(0x44) <- 0x10;
+  computer.banks.(0x45) <- 0xC0;
+  computer.banks.(0xC013) <- 0x04;
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x84 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1002 inst: ORA ($%02X),Y |}]
+;;
+
+let%expect_test "testing ORA INDIRECTINDEXED (0x11) zero" =
+  let cycles = 5 in
+  let pgm = [ 0x11; 0x44 ] in
+  let computer = init_test_computer 0x1000 pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x00; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
+    }
+  in
+  computer.banks.(0x44) <- 0x10;
+  computer.banks.(0x45) <- 0xC0;
+  computer.banks.(0xC013) <- 0x00;
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x00 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZc pc: 0x1002 inst: ORA ($%02X),Y |}]
+;;
+
+let%expect_test "testing ADC INDIRECTINDEXED (0x71) non-zero positive" =
+  let cycles = 5 in
+  let pgm = [ 0x71; 0x44 ] in
+  let computer = init_test_computer 0x1000 pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
+    }
+  in
+  computer.banks.(0x44) <- 0x10;
+  computer.banks.(0x45) <- 0xC0;
+  computer.banks.(0xC013) <- 0x05;
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x06 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: ADC ($%02X),Y |}]
+;;
+
+let%expect_test "testing ADC INDIRECTINDEXED (0x71) page cross" =
+  let cycles = 6 in
+  let pgm = [ 0x71; 0x44 ] in
+  let computer = init_test_computer 0x1000 pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0xFF; sp = 0xFD; sr = 0x00 }
+    }
+  in
+  computer.banks.(0x44) <- 0x10;
+  computer.banks.(0x45) <- 0xC0;
+  computer.banks.(0xC10F) <- 0x05;
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x06 x: 0x02 y: 0xFF sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: ADC ($%02X),Y |}]
+;;
+
+let%expect_test "testing ADC INDIRECTINDEXED (0x71) Incoming carry" =
+  let cycles = 5 in
+  let pgm = [ 0x71; 0x44 ] in
+  let computer = init_test_computer 0x1000 pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x01 }
+    }
+  in
+  computer.banks.(0x44) <- 0x10;
+  computer.banks.(0x45) <- 0xC0;
+  computer.banks.(0xC013) <- 0x05;
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x07 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: ADC ($%02X),Y |}]
+;;
+
+let%expect_test "testing ADC INDIRECTINDEXED (0x71) Generating Carry" =
+  let cycles = 5 in
+  let pgm = [ 0x71; 0x44 ] in
+  let computer = init_test_computer 0x1000 pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
+    }
+  in
+  computer.banks.(0x44) <- 0x10;
+  computer.banks.(0x45) <- 0xC0;
+  computer.banks.(0xC013) <- 0xFF;
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x00 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZC pc: 0x1002 inst: ADC ($%02X),Y |}]
+;;
+
+let%expect_test "testing ADC INDIRECTINDEXED (0x71) Pos+Pos=Neg" =
+  let cycles = 5 in
+  let pgm = [ 0x71; 0x44 ] in
+  let computer = init_test_computer 0x1000 pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x7F; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
+    }
+  in
+  computer.banks.(0x44) <- 0x10;
+  computer.banks.(0x45) <- 0xC0;
+  computer.banks.(0xC013) <- 0x01;
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x80 x: 0x02 y: 0x03 sp: 0xFD sr: NV-bdizc pc: 0x1002 inst: ADC ($%02X),Y |}]
+;;
+
+let%expect_test "testing ADC INDIRECTINDEXED (0x71) Pos+Neg" =
+  let cycles = 5 in
+  let pgm = [ 0x71; 0x44 ] in
+  let computer = init_test_computer 0x1000 pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x7F; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
+    }
+  in
+  computer.banks.(0x44) <- 0x10;
+  computer.banks.(0x45) <- 0xC0;
+  computer.banks.(0xC013) <- 0x80;
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0xFF x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1002 inst: ADC ($%02X),Y |}]
+;;
+
+let%expect_test "testing ADC INDIRECTINDEXED (0x71) Neg+Neg=Pos" =
+  let cycles = 5 in
+  let pgm = [ 0x71; 0x44 ] in
+  let computer = init_test_computer 0x1000 pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x80; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
+    }
+  in
+  computer.banks.(0x44) <- 0x10;
+  computer.banks.(0x45) <- 0xC0;
+  computer.banks.(0xC013) <- 0xFF;
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x7F x: 0x02 y: 0x03 sp: 0xFD sr: nV-bdizC pc: 0x1002 inst: ADC ($%02X),Y |}]
+;;
+
+let%expect_test "testing STA INDIRECTINDEXED (0x91)" =
+  let cycles = 6 in
+  let pgm = [ 0x91; 0x44 ] in
+  let computer = init_test_computer 0x1000 pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
+    }
+  in
+  computer.banks.(0x44) <- 0x10;
+  computer.banks.(0x45) <- 0xC0;
+  computer.banks.(0xC013) <- 0xEA;
+  let executions = execute_cycles cycles computer in
+  let last_computer = List.last_exn executions in
+  dump_last_execution executions;
+  printf "Mem: 0x%04X : 0x%02X" 0xC013 last_computer.banks.(0xC013);
+  [%expect
+    {|
+    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: STA ($%02X),Y
+
+    Mem: 0xC013 : 0x01
+    |}]
+;;
+
+let%expect_test "testing CMP INDIRECTINDEXED (0xD1) Equality" =
+  let cycles = 5 in
+  let pgm = [ 0xD1; 0x44 ] in
+  let computer = init_test_computer 0x1000 pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x42; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
+    }
+  in
+  computer.banks.(0x44) <- 0x10;
+  computer.banks.(0x45) <- 0xC0;
+  computer.banks.(0xC013) <- 0x42;
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x42 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZC pc: 0x1002 inst: CMP ($%02X),Y |}]
+;;
+
+let%expect_test "testing CMP INDIRECTINDEXED (0xD1) page cross" =
+  let cycles = 6 in
+  let pgm = [ 0xD1; 0x44 ] in
+  let computer = init_test_computer 0x1000 pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x42; x = 0x02; y = 0xFF; sp = 0xFD; sr = 0x00 }
+    }
+  in
+  computer.banks.(0x44) <- 0x10;
+  computer.banks.(0x45) <- 0xC0;
+  computer.banks.(0xC10F) <- 0x42;
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x42 x: 0x02 y: 0xFF sp: 0xFD sr: nv-bdiZC pc: 0x1002 inst: CMP ($%02X),Y |}]
+;;
+
+let%expect_test "testing CMP INDIRECTINDEXED (0xD1) Greater Than" =
+  let cycles = 5 in
+  let pgm = [ 0xD1; 0x44 ] in
+  let computer = init_test_computer 0x1000 pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0xFF; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
+    }
+  in
+  computer.banks.(0x44) <- 0x10;
+  computer.banks.(0x45) <- 0xC0;
+  computer.banks.(0xC013) <- 0x01;
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0xFF x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizC pc: 0x1002 inst: CMP ($%02X),Y |}]
+;;
+
+let%expect_test "testing CMP INDIRECTINDEXED (0xD1) Less Than" =
+  let cycles = 5 in
+  let pgm = [ 0xD1; 0x44 ] in
+  let computer = init_test_computer 0x1000 pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x02; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
+    }
+  in
+  computer.banks.(0x44) <- 0x10;
+  computer.banks.(0x45) <- 0xC0;
+  computer.banks.(0xC013) <- 0x03;
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x02 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1002 inst: CMP ($%02X),Y |}]
+;;
+
+let%expect_test "testing SBC INDIRECTINDEXED (0xF1) No Borrow" =
+  let cycles = 5 in
+  let pgm = [ 0xF1; 0x44 ] in
+  let computer = init_test_computer 0x1000 pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x05; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x01 }
+    }
+  in
+  computer.banks.(0x44) <- 0x10;
+  computer.banks.(0x45) <- 0xC0;
+  computer.banks.(0xC013) <- 0x02;
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x03 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizC pc: 0x1002 inst: SBC ($%02X),Y |}]
+;;
+
+let%expect_test "testing SBC INDIRECTINDEXED (0xF1) Page Cross" =
+  let cycles = 6 in
+  let pgm = [ 0xF1; 0x44 ] in
+  let computer = init_test_computer 0x1000 pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x05; x = 0x02; y = 0xFF; sp = 0xFD; sr = 0x01 }
+    }
+  in
+  computer.banks.(0x44) <- 0x10;
+  computer.banks.(0x45) <- 0xC0;
+  computer.banks.(0xC10F) <- 0x02;
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x03 x: 0x02 y: 0xFF sp: 0xFD sr: nv-bdizC pc: 0x1002 inst: SBC ($%02X),Y |}]
+;;
+
+let%expect_test "testing SBC INDIRECTINDEXED (0xF1) With  Borrow" =
+  let cycles = 5 in
+  let pgm = [ 0xF1; 0x44 ] in
+  let computer = init_test_computer 0x1000 pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x05; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
+    }
+  in
+  computer.banks.(0x44) <- 0x10;
+  computer.banks.(0x45) <- 0xC0;
+  computer.banks.(0xC013) <- 0x02;
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x02 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizC pc: 0x1002 inst: SBC ($%02X),Y |}]
+;;
+
+let%expect_test "testing SBC INDIRECTINDEXED (0xF1) Underflow" =
+  let cycles = 5 in
+  let pgm = [ 0xF1; 0x44 ] in
+  let computer = init_test_computer 0x1000 pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x01 }
+    }
+  in
+  computer.banks.(0x44) <- 0x10;
+  computer.banks.(0x45) <- 0xC0;
+  computer.banks.(0xC013) <- 0x02;
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0xFF x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1002 inst: SBC ($%02X),Y |}]
+;;
+
+let%expect_test "testing SBC INDIRECTINDEXED (0xF1) Overflow" =
+  let cycles = 5 in
+  let pgm = [ 0xF1; 0x44 ] in
+  let computer = init_test_computer 0x1000 pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x80; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x01 }
+    }
+  in
+  computer.banks.(0x44) <- 0x10;
+  computer.banks.(0x45) <- 0xC0;
+  computer.banks.(0xC013) <- 0x01;
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x7F x: 0x02 y: 0x03 sp: 0xFD sr: nV-bdizC pc: 0x1002 inst: SBC ($%02X),Y |}]
+;;
+
+let%expect_test "testing BCC IMMEDIATE (0x90) branch not taken" =
+  let cycles = 2 in
+  let pgm = [ 0x90; 0x03 ] in
+  let computer = init_test_computer 0x1000 pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x01 }
+    }
+  in
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizC pc: 0x1002 inst: BCC $%02X |}]
+;;
+
+let%expect_test "testing BCC IMMEDIATE (0x90) branch taken same page pos" =
+  let cycles = 3 in
+  let pgm = [ 0x90; 0x03 ] in
+  let computer = init_test_computer 0x1000 pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
+    }
+  in
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1005 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1005 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1005 inst: BCC $%02X |}]
+;;
+
+let%expect_test "testing BCC IMMEDIATE (0x90) branch taken same page neg" =
+  let cycles = 3 in
+  let pgm = [ 0x90; 0xF0 ] in
+  let computer = init_test_computer 0x1010 pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
+    }
+  in
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: BCC $%02X |}]
+;;
+
+let%expect_test "testing BCC IMMEDIATE (0x90) branch taken pos page cross" =
+  let cycles = 4 in
+  let pgm = [ 0x90; 0x05 ] in
+  let computer = init_test_computer 0x10FE pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
+    }
+  in
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1105 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1105 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1105 inst: BCC $%02X |}]
+;;
+
+let%expect_test "testing BCC IMMEDIATE (0x90) branch taken neg page cross" =
+  let cycles = 4 in
+  let pgm = [ 0x90; 0xFA ] in
+  let computer = init_test_computer 0x1001 pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
+    }
+  in
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x10FD db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x10FD data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x10FD inst: BCC $%02X |}]
+;;
+
+let%expect_test "testing BCS IMMEDIATE (0xB0) branch not taken" =
+  let cycles = 2 in
+  let pgm = [ 0xB0; 0x03 ] in
+  let computer = init_test_computer 0x1000 pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
+    }
+  in
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: BCS $%02X |}]
+;;
+
+let%expect_test "testing BCS IMMEDIATE (0xB0) branch taken same page pos" =
+  let cycles = 3 in
+  let pgm = [ 0xB0; 0x03 ] in
+  let computer = init_test_computer 0x1000 pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x01 }
+    }
+  in
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1005 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1005 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizC pc: 0x1005 inst: BCS $%02X |}]
+;;
+
+let%expect_test "testing BCS IMMEDIATE (0xB0) branch taken same page neg" =
+  let cycles = 3 in
+  let pgm = [ 0xB0; 0xF0 ] in
+  let computer = init_test_computer 0x1010 pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x01 }
+    }
+  in
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizC pc: 0x1002 inst: BCS $%02X |}]
+;;
+
+let%expect_test "testing BCS IMMEDIATE (0xB0) branch taken pos page cross" =
+  let cycles = 4 in
+  let pgm = [ 0xB0; 0x05 ] in
+  let computer = init_test_computer 0x10FE pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x01 }
+    }
+  in
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1105 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1105 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizC pc: 0x1105 inst: BCS $%02X |}]
+;;
+
+let%expect_test "testing BCS IMMEDIATE (0xB0) branch taken neg page cross" =
+  let cycles = 4 in
+  let pgm = [ 0xB0; 0xFA ] in
+  let computer = init_test_computer 0x1001 pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x01 }
+    }
+  in
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x10FD db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x10FD data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizC pc: 0x10FD inst: BCS $%02X |}]
+;;
+
+let%expect_test "testing BNE IMMEDIATE (0xD0) branch not taken" =
+  let cycles = 2 in
+  let pgm = [ 0xD0; 0x03 ] in
+  let computer = init_test_computer 0x1000 pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x02 }
+    }
+  in
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZc pc: 0x1002 inst: BNE $%02X |}]
+;;
+
+let%expect_test "testing BNE IMMEDIATE (0xD0) branch taken same page pos" =
+  let cycles = 3 in
+  let pgm = [ 0xD0; 0x03 ] in
+  let computer = init_test_computer 0x1000 pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
+    }
+  in
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1005 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1005 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1005 inst: BNE $%02X |}]
+;;
+
+let%expect_test "testing BNE IMMEDIATE (0xD0) branch taken same page neg" =
+  let cycles = 3 in
+  let pgm = [ 0xD0; 0xF0 ] in
+  let computer = init_test_computer 0x1010 pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
+    }
+  in
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: BNE $%02X |}]
+;;
+
+let%expect_test "testing BNE IMMEDIATE (0xD0) branch taken pos page cross" =
+  let cycles = 4 in
+  let pgm = [ 0xD0; 0x05 ] in
+  let computer = init_test_computer 0x10FE pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
+    }
+  in
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1105 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1105 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1105 inst: BNE $%02X |}]
+;;
+
+let%expect_test "testing BNE IMMEDIATE (0xD0) branch taken neg page cross" =
+  let cycles = 4 in
+  let pgm = [ 0xD0; 0xFA ] in
+  let computer = init_test_computer 0x1001 pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
+    }
+  in
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x10FD db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x10FD data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x10FD inst: BNE $%02X |}]
+;;
+
+let%expect_test "testing BEQ IMMEDIATE (0xF0) branch not taken" =
+  let cycles = 2 in
+  let pgm = [ 0xF0; 0x03 ] in
+  let computer = init_test_computer 0x1000 pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
+    }
+  in
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: BEQ $%02X |}]
+;;
+
+let%expect_test "testing BEQ IMMEDIATE (0xF0) branch taken same page pos" =
+  let cycles = 3 in
+  let pgm = [ 0xF0; 0x03 ] in
+  let computer = init_test_computer 0x1000 pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x02 }
+    }
+  in
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1005 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1005 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZc pc: 0x1005 inst: BEQ $%02X |}]
+;;
+
+let%expect_test "testing BEQ IMMEDIATE (0xF0) branch taken same page neg" =
+  let cycles = 3 in
+  let pgm = [ 0xF0; 0xF0 ] in
+  let computer = init_test_computer 0x1010 pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x02 }
+    }
+  in
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZc pc: 0x1002 inst: BEQ $%02X |}]
+;;
+
+let%expect_test "testing BEQ IMMEDIATE (0xF0) branch taken pos page cross" =
+  let cycles = 4 in
+  let pgm = [ 0xF0; 0x05 ] in
+  let computer = init_test_computer 0x10FE pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x02 }
+    }
+  in
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1105 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1105 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZc pc: 0x1105 inst: BEQ $%02X |}]
+;;
+
+let%expect_test "testing BEQ IMMEDIATE (0xF0) branch taken neg page cross" =
+  let cycles = 4 in
+  let pgm = [ 0xF0; 0xFA ] in
+  let computer = init_test_computer 0x1001 pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x02 }
+    }
+  in
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x10FD db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x10FD data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZc pc: 0x10FD inst: BEQ $%02X |}]
+;;
+
+let%expect_test "testing BPL IMMEDIATE (0x10) branch not taken" =
+  let cycles = 2 in
+  let pgm = [ 0x10; 0x03 ] in
+  let computer = init_test_computer 0x1000 pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x80 }
+    }
+  in
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1002 inst: BPL $%02X |}]
+;;
+
+let%expect_test "testing BPL IMMEDIATE (0x10) branch taken same page pos" =
+  let cycles = 3 in
+  let pgm = [ 0x10; 0x03 ] in
+  let computer = init_test_computer 0x1000 pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
+    }
+  in
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1005 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1005 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1005 inst: BPL $%02X |}]
+;;
+
+let%expect_test "testing BPL IMMEDIATE (0x10) branch taken same page neg" =
+  let cycles = 3 in
+  let pgm = [ 0x10; 0xF0 ] in
+  let computer = init_test_computer 0x1010 pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
+    }
+  in
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: BPL $%02X |}]
+;;
+
+let%expect_test "testing BPL IMMEDIATE (0x10) branch taken pos page cross" =
+  let cycles = 4 in
+  let pgm = [ 0x10; 0x05 ] in
+  let computer = init_test_computer 0x10FE pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
+    }
+  in
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1105 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1105 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1105 inst: BPL $%02X |}]
+;;
+
+let%expect_test "testing BPL IMMEDIATE (0x10) branch taken neg page cross" =
+  let cycles = 4 in
+  let pgm = [ 0x10; 0xFA ] in
+  let computer = init_test_computer 0x1001 pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
+    }
+  in
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x10FD db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x10FD data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x10FD inst: BPL $%02X |}]
+;;
+
+let%expect_test "testing BMI IMMEDIATE (0x30) branch not taken" =
+  let cycles = 2 in
+  let pgm = [ 0x30; 0x03 ] in
+  let computer = init_test_computer 0x1000 pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
+    }
+  in
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: BMI $%02X |}]
+;;
+
+let%expect_test "testing BMI IMMEDIATE (0x30) branch taken same page pos" =
+  let cycles = 3 in
+  let pgm = [ 0x30; 0x03 ] in
+  let computer = init_test_computer 0x1000 pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x80 }
+    }
+  in
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1005 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1005 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1005 inst: BMI $%02X |}]
+;;
+
+let%expect_test "testing BMI IMMEDIATE (0x30) branch taken same page neg" =
+  let cycles = 3 in
+  let pgm = [ 0x30; 0xF0 ] in
+  let computer = init_test_computer 0x1010 pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x80 }
+    }
+  in
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1002 inst: BMI $%02X |}]
+;;
+
+let%expect_test "testing BMI IMMEDIATE (0x30) branch taken pos page cross" =
+  let cycles = 4 in
+  let pgm = [ 0x30; 0x05 ] in
+  let computer = init_test_computer 0x10FE pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x80 }
+    }
+  in
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1105 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1105 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1105 inst: BMI $%02X |}]
+;;
+
+let%expect_test "testing BMI IMMEDIATE (0x30) branch taken neg page cross" =
+  let cycles = 4 in
+  let pgm = [ 0x30; 0xFA ] in
+  let computer = init_test_computer 0x1001 pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x80 }
+    }
+  in
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x10FD db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x10FD data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x10FD inst: BMI $%02X |}]
+;;
+
+let%expect_test "testing BVC IMMEDIATE (0x50) branch not taken" =
+  let cycles = 2 in
+  let pgm = [ 0x50; 0x03 ] in
+  let computer = init_test_computer 0x1000 pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x40 }
+    }
+  in
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nV-bdizc pc: 0x1002 inst: BVC $%02X |}]
+;;
+
+let%expect_test "testing BVC IMMEDIATE (0x50) branch taken same page pos" =
+  let cycles = 3 in
+  let pgm = [ 0x50; 0x03 ] in
+  let computer = init_test_computer 0x1000 pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
+    }
+  in
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1005 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1005 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1005 inst: BVC $%02X |}]
+;;
+
+let%expect_test "testing BVC IMMEDIATE (0x50) branch taken same page neg" =
+  let cycles = 3 in
+  let pgm = [ 0x50; 0xF0 ] in
+  let computer = init_test_computer 0x1010 pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
+    }
+  in
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: BVC $%02X |}]
+;;
+
+let%expect_test "testing BVC IMMEDIATE (0x50) branch taken pos page cross" =
+  let cycles = 4 in
+  let pgm = [ 0x50; 0x05 ] in
+  let computer = init_test_computer 0x10FE pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
+    }
+  in
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1105 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1105 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1105 inst: BVC $%02X |}]
+;;
+
+let%expect_test "testing BVC IMMEDIATE (0x50) branch taken neg page cross" =
+  let cycles = 4 in
+  let pgm = [ 0x50; 0xFA ] in
+  let computer = init_test_computer 0x1001 pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
+    }
+  in
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x10FD db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x10FD data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x10FD inst: BVC $%02X |}]
+;;
+
+let%expect_test "testing BVS IMMEDIATE (0x70) branch not taken" =
+  let cycles = 2 in
+  let pgm = [ 0x70; 0x03 ] in
+  let computer = init_test_computer 0x1000 pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
+    }
+  in
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: BVS $%02X |}]
+;;
+
+let%expect_test "testing BVS IMMEDIATE (0x70) branch taken same page pos" =
+  let cycles = 3 in
+  let pgm = [ 0x70; 0x03 ] in
+  let computer = init_test_computer 0x1000 pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x40 }
+    }
+  in
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1005 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1005 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nV-bdizc pc: 0x1005 inst: BVS $%02X |}]
+;;
+
+let%expect_test "testing BVS IMMEDIATE (0x70) branch taken same page neg" =
+  let cycles = 3 in
+  let pgm = [ 0x70; 0xF0 ] in
+  let computer = init_test_computer 0x1010 pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x40 }
+    }
+  in
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nV-bdizc pc: 0x1002 inst: BVS $%02X |}]
+;;
+
+let%expect_test "testing BVS IMMEDIATE (0x70) branch taken pos page cross" =
+  let cycles = 4 in
+  let pgm = [ 0x70; 0x05 ] in
+  let computer = init_test_computer 0x10FE pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x40 }
+    }
+  in
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1105 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1105 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nV-bdizc pc: 0x1105 inst: BVS $%02X |}]
+;;
+
+let%expect_test "testing BVS IMMEDIATE (0x70) branch taken neg page cross" =
+  let cycles = 4 in
+  let pgm = [ 0x70; 0xFA ] in
+  let computer = init_test_computer 0x1001 pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x40 }
+    }
+  in
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x10FD db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x10FD data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nV-bdizc pc: 0x10FD inst: BVS $%02X |}]
+;;
+
+let%expect_test "testing JSR ABSOLUTE (0x20)" =
+  let cycles = 6 in
+  let pgm = [ 0x20; 0x69; 0x42 ] in
+  let computer = init_test_computer 0x1000 pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
+    }
+  in
+  computer.banks.(0x4269) <- 0xEA;
+  let executions = execute_cycles cycles computer in
+  let last_computer = List.last_exn executions in
+  dump_last_execution executions;
+  printf "Mem: 0x%04X : 0x%02X\n" 0x1FB last_computer.banks.(0x1FB);
+  printf "Mem: 0x%04X : 0x%02X\n" 0x1FC last_computer.banks.(0x1FC);
+  printf "Mem: 0x%04X : 0x%02X\n" 0x1FD last_computer.banks.(0x1FD);
+  printf "Mem: 0x%04X : 0x%02X\n" 0x1FE last_computer.banks.(0x1FE);
+  printf "Mem: 0x%04X : 0x%02X\n" 0x1FF last_computer.banks.(0x1FF);
+  [%expect
+    {|
+    ab: 0x4269 db: 0xEA phy2: 0 cycle: 1 rw: true address: 0x4269 data: 0xEA a: 0x01 x: 0x02 y: 0x03 sp: 0xFB sr: nv-bdizc pc: 0x4269 inst: JSR $%04X
+
+    Mem: 0x01FB : 0xFF
+    Mem: 0x01FC : 0x02
+    Mem: 0x01FD : 0x10
+    Mem: 0x01FE : 0xFF
+    Mem: 0x01FF : 0xFF
+
+    |}]
+;;
+
+let%expect_test "testing RTS IMPLIED (0x60)" =
+  let cycles = 6 in
+  let pgm = [ 0x60 ] in
+  let computer = init_test_computer 0x1000 pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFB; sr = 0x00 }
+    }
+  in
+  computer.banks.(0x01FB) <- 0xFF;
+  computer.banks.(0x01FC) <- 0x02;
+  computer.banks.(0x01FD) <- 0x10;
+  computer.banks.(0x01FE) <- 0x81;
+  computer.banks.(0x01FF) <- 0x82;
+  let executions = execute_cycles cycles computer in
+  let last_computer = List.last_exn executions in
+  dump_last_execution executions;
+  printf "Mem: 0x%04X : 0x%02X\n" 0x1FB last_computer.banks.(0x1FB);
+  printf "Mem: 0x%04X : 0x%02X\n" 0x1FC last_computer.banks.(0x1FC);
+  printf "Mem: 0x%04X : 0x%02X\n" 0x1FD last_computer.banks.(0x1FD);
+  printf "Mem: 0x%04X : 0x%02X\n" 0x1FE last_computer.banks.(0x1FE);
+  printf "Mem: 0x%04X : 0x%02X\n" 0x1FF last_computer.banks.(0x1FF);
+  [%expect
+    {|
+    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: RTS
+
+    Mem: 0x01FB : 0xFF
+    Mem: 0x01FC : 0x02
+    Mem: 0x01FD : 0x10
+    Mem: 0x01FE : 0x81
+    Mem: 0x01FF : 0x82
+
+    |}]
+;;
+
+let%expect_test "testing RTI IMPLIED (0x40)" =
+  let cycles = 6 in
+  let pgm = [ 0x40 ] in
+  let computer = init_test_computer 0x1000 pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFA; sr = 0x00 }
+    }
+  in
+  computer.banks.(0x01FB) <- 0b0100_0001;
+  computer.banks.(0x01FC) <- 0x02;
+  computer.banks.(0x01FD) <- 0x20;
+  computer.banks.(0x01FE) <- 0x81;
+  computer.banks.(0x01FF) <- 0x82;
+  let executions = execute_cycles cycles computer in
+  let last_computer = List.last_exn executions in
+  dump_last_execution executions;
+  printf "Mem: 0x%04X : 0x%02X\n" 0x1FB last_computer.banks.(0x1FB);
+  printf "Mem: 0x%04X : 0x%02X\n" 0x1FC last_computer.banks.(0x1FC);
+  printf "Mem: 0x%04X : 0x%02X\n" 0x1FD last_computer.banks.(0x1FD);
+  printf "Mem: 0x%04X : 0x%02X\n" 0x1FE last_computer.banks.(0x1FE);
+  printf "Mem: 0x%04X : 0x%02X\n" 0x1FF last_computer.banks.(0x1FF);
+  [%expect
+    {|
+    ab: 0x2002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x2002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nV-bdizC pc: 0x2002 inst: RTI
+
+    Mem: 0x01FB : 0x41
+    Mem: 0x01FC : 0x02
+    Mem: 0x01FD : 0x20
+    Mem: 0x01FE : 0x81
+    Mem: 0x01FF : 0x82
+
+    |}]
+;;
+
+let%expect_test "testing RTI IMPLIED (0x40) should clear break flag" =
+  let cycles = 6 in
+  let pgm = [ 0x40 ] in
+  let computer = init_test_computer 0x1000 pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFA; sr = 0x00 }
+    }
+  in
+  computer.banks.(0x01FB) <- 0b0101_0001;
+  computer.banks.(0x01FC) <- 0x02;
+  computer.banks.(0x01FD) <- 0x20;
+  computer.banks.(0x01FE) <- 0x81;
+  computer.banks.(0x01FF) <- 0x82;
+  let executions = execute_cycles cycles computer in
+  let last_computer = List.last_exn executions in
+  dump_last_execution executions;
+  printf "Mem: 0x%04X : 0x%02X\n" 0x1FB last_computer.banks.(0x1FB);
+  printf "Mem: 0x%04X : 0x%02X\n" 0x1FC last_computer.banks.(0x1FC);
+  printf "Mem: 0x%04X : 0x%02X\n" 0x1FD last_computer.banks.(0x1FD);
+  printf "Mem: 0x%04X : 0x%02X\n" 0x1FE last_computer.banks.(0x1FE);
+  printf "Mem: 0x%04X : 0x%02X\n" 0x1FF last_computer.banks.(0x1FF);
+  [%expect
+    {|
+    ab: 0x2002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x2002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nV-bdizC pc: 0x2002 inst: RTI
+
+    Mem: 0x01FB : 0x51
+    Mem: 0x01FC : 0x02
+    Mem: 0x01FD : 0x20
+    Mem: 0x01FE : 0x81
+    Mem: 0x01FF : 0x82
+
+    |}]
+;;
+
+let%expect_test "testing JMP INDIRECT Normal (0x6C)" =
+  let cycles = 5 in
+  (* JMP $0x4469 *)
+  let pgm = [ 0x6C; 0x44; 0x69 ] in
+  let computer = init_test_computer 0x1000 pgm in
+  let computer =
+    { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x00 } }
+  in
+  computer.banks.(0x6944) <- 0xC4;
+  computer.banks.(0x6945) <- 0x80;
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x80C4 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x80C4 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: nv-bdizc pc: 0x80C4 inst: JMP ($%04X) |}]
+;;
+
+let%expect_test "testing BRK IMPLIED (0x00)" =
+  let cycles = 7 in
+  let pgm = [ 0x00 ] in
+  let computer = init_test_computer 0x1000 pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFE; sr = 0x01 }
+    }
+  in
+  computer.banks.(0x01FB) <- 0x85;
+  computer.banks.(0x01FC) <- 0x84;
+  computer.banks.(0x01FD) <- 0x83;
+  computer.banks.(0x01FE) <- 0x82;
+  computer.banks.(0x01FF) <- 0x81;
+  computer.banks.(0xFFFE) <- 0x10;
+  computer.banks.(0xFFFF) <- 0xC0;
+  let executions = execute_cycles cycles computer in
+  let last_computer = List.last_exn executions in
+  dump_last_execution executions;
+  printf "Mem: 0x%04X : 0x%02X\n" 0x1FB last_computer.banks.(0x1FB);
+  printf "Mem: 0x%04X : 0x%02X\n" 0x1FC last_computer.banks.(0x1FC);
+  printf "Mem: 0x%04X : 0x%02X\n" 0x1FD last_computer.banks.(0x1FD);
+  printf "Mem: 0x%04X : 0x%02X\n" 0x1FE last_computer.banks.(0x1FE);
+  printf "Mem: 0x%04X : 0x%02X\n" 0x1FF last_computer.banks.(0x1FF);
+  [%expect
+    {|
+    ab: 0xC010 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0xC010 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFB sr: nv-BdIzC pc: 0xC010 inst: BRK
+
+    Mem: 0x01FB : 0x85
+    Mem: 0x01FC : 0x15
+    Mem: 0x01FD : 0x02
+    Mem: 0x01FE : 0x10
+    Mem: 0x01FF : 0x81
+
+    |}]
 ;;

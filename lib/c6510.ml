@@ -356,6 +356,7 @@ module M = struct
       | 0xAD -> LDA, ABSOLUTE, 3, 4
       | 0xAE -> LDX, ABSOLUTE, 3, 4
       | 0xAC -> LDY, ABSOLUTE, 3, 4
+      | 0xB0 -> BCS, RELATIVE, 2, 2
       | 0xB1 -> LDA, INDIRECTINDEXED, 2, 5
       | 0xB4 -> LDY, ZEROPAGEX, 2, 4
       | 0xB5 -> LDA, ZEROPAGEX, 2, 4
@@ -377,6 +378,8 @@ module M = struct
       | 0xCC -> CPY, ABSOLUTE, 3, 4
       | 0xCD -> CMP, ABSOLUTE, 3, 4
       | 0xCE -> DEC, ABSOLUTE, 3, 6
+      | 0xD0 -> BNE, RELATIVE, 2, 2
+      | 0xD1 -> CMP, INDIRECTINDEXED, 2, 5
       | 0xD5 -> CMP, ZEROPAGEX, 2, 4
       | 0xD6 -> DEC, ZEROPAGEX, 2, 6
       | 0xD8 -> CLD, IMPLIED, 1, 2
@@ -394,12 +397,14 @@ module M = struct
       | 0xEC -> CPX, ABSOLUTE, 3, 4
       | 0xED -> SBC, ABSOLUTE, 3, 4
       | 0xEE -> INC, ABSOLUTE, 3, 6
+      | 0xF0 -> BEQ, RELATIVE, 2, 2
+      | 0xF1 -> SBC, INDIRECTINDEXED, 2, 5
       | 0xF6 -> INC, ZEROPAGEX, 2, 6
       | 0xF8 -> SED, IMPLIED, 1, 2
       | 0xF9 -> SBC, ABSOLUTEY, 3, 4
       | 0xFD -> SBC, ABSOLUTEX, 3, 4
       | 0xFE -> INC, ABSOLUTEX, 3, 7
-      | opcode -> failwith (Printf.sprintf "Opcode 0x%02X Not implemented" opcode)
+      | opcode -> failwith (Printf.sprintf "Opcode 0x%02X Not implemented%!" opcode)
     in
     { inst = mnemonic; mode; bytes; cycles }
   ;;
@@ -547,10 +552,25 @@ module M = struct
     match cpu.cycle with
     | 1 ->
       let opcode = cpu.data in
+      let ir = decode opcode in
       let pc = cpu.pc + 1 in
-      { cpu with ir = decode opcode; address = pc; pc; rw = true; cycle = 2 }
+      let sr =
+        match ir.mode with
+        | IMPLIED ->
+          (match ir.inst with
+           | BRK -> cpu.sr lor 0b0000_0100
+           | _ -> cpu.sr)
+        | _ -> cpu.sr
+      in
+      { cpu with ir; address = pc; pc; sr; rw = true; cycle = 2 }
     | 2 ->
       (match cpu.ir.mode with
+       | INDIRECT ->
+         let pcl = cpu.data in
+         let pc = cpu.pc + 1 in
+         (match cpu.ir.inst with
+          | JMP -> { cpu with address = pc; pcl; pc; rw = true; cycle = 3 }
+          | _ -> failwith "Invalid INDIRECT instruction")
        | IMPLIED ->
          (match cpu.ir.inst with
           | NOP -> { cpu with address = cpu.pc; rw = true; cycle = 1 }
@@ -669,6 +689,14 @@ module M = struct
           | PLA ->
             let sp = (cpu.sp + 1) land 0xFF in
             { cpu with address = 0x100 + cpu.sp; sp; rw = true; cycle = 3 }
+          | RTS -> { cpu with address = 0x100 + cpu.sp; rw = true; cycle = 3 }
+          | RTI -> { cpu with address = 0x100 + cpu.sp; rw = true; cycle = 3 }
+          | BRK ->
+            let pc = cpu.pc + 1 in
+            let pch = (pc land 0xFF00) lsr 8 in
+            let pcl = pc land 0xFF in
+            let address = 0x0100 + cpu.sp in
+            { cpu with address; pc; data = pch; pcl; pch; rw = false; cycle = 3 }
           | PLP ->
             let sp = (cpu.sp + 1) land 0xFF in
             { cpu with address = 0x100 + cpu.sp; sp; rw = true; cycle = 3 }
@@ -742,13 +770,43 @@ module M = struct
           | CPY
           | BIT -> { cpu with address = operand; pc; rw = true; cycle = 3 }
           | _ -> failwith "ZEROPAGEX Cycle 2 Not implemnetd")
+       | RELATIVE ->
+         let offset =
+           if cpu.data land 0b1000_0000 = 0b1000_0000 then cpu.data - 256 else cpu.data
+         in
+         let pcl = (cpu.pc land 0xFF) + offset in
+         let pc = cpu.pc + 1 in
+         let branch_taken =
+           match cpu.ir.inst with
+           | BCC -> not (cpu.sr land 0b0000_0001 = 0b0000_0001)
+           | BCS -> cpu.sr land 0b0000_0001 = 0b0000_0001
+           | BNE -> not (cpu.sr land 0b0000_0010 = 0b0000_0010)
+           | BEQ -> cpu.sr land 0b0000_0010 = 0b0000_0010
+           | BPL -> not (cpu.sr land 0b1000_0000 = 0b1000_0000)
+           | BMI -> cpu.sr land 0b1000_0000 = 0b1000_0000
+           | BVC -> not (cpu.sr land 0b0100_0000 = 0b0100_0000)
+           | BVS -> cpu.sr land 0b0100_0000 = 0b0100_0000
+           | _ -> failwith "RELATIVE Cycle 2 Not implemnetd"
+         in
+         if branch_taken
+         then (
+           let address = pc land 0xFF00 lor (pcl land 0xFF) in
+           { cpu with pcl; address; pc = address; rw = true; cycle = 3 })
+         else { cpu with address = pc; pc; rw = true; cycle = 1 }
        | INDEXEDINDIRECT ->
          let operand = cpu.data in
          let pc = cpu.pc + 1 in
          (match cpu.ir.inst with
           | STA | LDA | AND | ORA | EOR | ADC | SBC | CMP ->
             { cpu with address = operand; pc; rw = true; cycle = 3 }
-          | _ -> failwith "ZEROPAGEX Cycle 2 Not implemnetd")
+          | _ -> failwith "INDEXEDINDIRECT Cycle 2 Not implemnetd")
+       | INDIRECTINDEXED ->
+         let operand = cpu.data in
+         let pc = cpu.pc + 1 in
+         (match cpu.ir.inst with
+          | STA | LDA | AND | ORA | EOR | ADC | SBC | CMP ->
+            { cpu with address = operand; pc; rw = true; cycle = 3 }
+          | _ -> failwith "INDIRECTINDEXED Cycle 2 Not implemnetd")
        | ABSOLUTEX ->
          let pcl = cpu.data in
          let pc = cpu.pc + 1 in
@@ -807,6 +865,7 @@ module M = struct
           | CPX
           | CPY
           | JMP
+          | JSR
           | BIT -> { cpu with address = pc; pcl; pc; rw = true; cycle = 3 }
           | _ -> failwith "ABSOLUTE Cycle 2 Not implemnetd")
        | IMMEDIATE ->
@@ -847,11 +906,41 @@ module M = struct
        | _ -> failwith "Not implemented")
     | 3 ->
       (match cpu.ir.mode with
+       | INDIRECT ->
+         let pch = cpu.data in
+         let pc = cpu.pc + 1 in
+         let address = (pch lsl 8) lor cpu.pcl in
+         (match cpu.ir.inst with
+          | JMP -> { cpu with address; pch; pc; rw = true; cycle = 4 }
+          | _ -> failwith "Invalid INDIRECT instruction")
        | IMPLIED ->
          (match cpu.ir.inst with
           | PLA | PLP -> { cpu with rw = true; cycle = 4 }
           | PHA | PHP -> { cpu with address = cpu.pc; rw = true; cycle = 1 }
+          | BRK ->
+            let sp = (cpu.sp - 1) land 0xFF in
+            let address = 0x0100 + sp in
+            let sr = cpu.sr lor 0b0001_0000 in
+            { cpu with address; sp; data = cpu.pcl; sr; rw = false; cycle = 4 }
+          | RTS | RTI ->
+            let sp = (cpu.sp + 1) land 0xFF in
+            { cpu with address = sp + 0x0100; sp; rw = true; cycle = 4 }
           | _ -> failwith "Implied cycle 3 not implemented")
+       | RELATIVE ->
+         (match cpu.ir.inst with
+          | BCC | BCS | BNE | BEQ | BMI | BPL | BVS | BVC ->
+            if cpu.pcl > 255
+            then (
+              let pc = (cpu.pc + 0x000 + 1) land 0xFFFF in
+              { cpu with address = pc; pc; rw = true; cycle = 4 })
+            else if cpu.pcl < 0
+            then (
+              let pc = (cpu.pc - 0x000 + 1) land 0xFFFF in
+              { cpu with address = pc; pc; rw = true; cycle = 4 })
+            else (
+              let pc = cpu.pc + 1 in
+              { cpu with address = pc; pc; rw = true; cycle = 1 })
+          | _ -> failwith "Invalide RELATIVE instruction )")
        | ZEROPAGE ->
          (match cpu.ir.inst with
           | LDA ->
@@ -960,6 +1049,14 @@ module M = struct
           | STA | LDA | AND | ORA | EOR | ADC | SBC | CMP ->
             { cpu with address; pc; rw = true; cycle = 4 }
           | _ -> failwith "INDEXEDINDIRECT Cycle 3 Not implemnetd")
+       | INDIRECTINDEXED ->
+         let pcl = cpu.data in
+         let pc = cpu.pc in
+         let address = (cpu.address + 1) land 0xFF in
+         (match cpu.ir.inst with
+          | STA | LDA | AND | ORA | EOR | ADC | SBC | CMP ->
+            { cpu with address; pc; pcl; rw = true; cycle = 4 }
+          | _ -> failwith "INDIRECTINDEXED Cycle 3 Not implemnetd")
        | ZEROPAGEY ->
          let pc = cpu.pc in
          let address = (cpu.address + cpu.y) land 0xFF in
@@ -976,6 +1073,15 @@ module M = struct
           | STX -> { cpu with address; data = cpu.x; pc; rw = false; cycle = 4 }
           | STY -> { cpu with address; data = cpu.y; pc; rw = false; cycle = 4 }
           | JMP -> { cpu with address; pc = address; rw = true; cycle = 1 }
+          | JSR ->
+            { cpu with
+              address = 0x0100 + cpu.sp
+            ; pch
+            ; data = (cpu.pc land 0xFF00) lsr 8
+            ; sp = (cpu.sp - 1) land 0xFF
+            ; rw = false
+            ; cycle = 4
+            }
           | LDA
           | LDX
           | LDY
@@ -1029,6 +1135,14 @@ module M = struct
        | _ -> failwith "Addressing Not implemented")
     | 4 ->
       (match cpu.ir.mode with
+       | INDIRECT ->
+         let pcl = cpu.data in
+         let address =
+           cpu.address land 0xFF00 lor (((cpu.address land 0xFF) + 1) land 0xFF)
+         in
+         (match cpu.ir.inst with
+          | JMP -> { cpu with address; pcl; rw = true; cycle = 5 }
+          | _ -> failwith "Invalid INDIRECT instruction")
        | IMPLIED ->
          (match cpu.ir.inst with
           | PLA ->
@@ -1039,8 +1153,31 @@ module M = struct
             ; rw = true
             ; cycle = 1
             }
-          | PLP -> { cpu with sr = cpu.data; address = cpu.pc; rw = true; cycle = 1 }
+          | PLP ->
+            { cpu with
+              sr = cpu.data land 0b1110_1111
+            ; address = cpu.pc
+            ; rw = true
+            ; cycle = 1
+            }
+          | BRK ->
+            let sp = (cpu.sp - 1) land 0xFF in
+            let address = 0x0100 + sp in
+            { cpu with address; data = cpu.sr; sp; rw = false; cycle = 5 }
+          | RTS ->
+            let pcl = cpu.data in
+            let sp = (cpu.sp + 1) land 0xFF in
+            { cpu with pcl; address = sp + 0x0100; sp; rw = true; cycle = 5 }
+          | RTI ->
+            let sr = cpu.data land 0b1110_1111 in
+            let sp = (cpu.sp + 1) land 0xFF in
+            { cpu with sr; address = sp + 0x0100; sp; rw = true; cycle = 5 }
           | _ -> failwith "Inst not implemented")
+       | RELATIVE ->
+         (match cpu.ir.inst with
+          | BCC | BCS | BNE | BEQ | BMI | BPL | BVS | BVC ->
+            { cpu with address = cpu.pc; rw = true; cycle = 1 }
+          | _ -> failwith "Invalide RELATIVE instruction )")
        | ZEROPAGE ->
          let data, sr =
            match cpu.ir.inst with
@@ -1137,6 +1274,15 @@ module M = struct
           | STA | LDA | AND | ORA | EOR | ADC | SBC | CMP ->
             { cpu with address; pcl; rw = true; cycle = 5 }
           | _ -> failwith "INDEXEDINDIRECT Cycle 4 Not implemnetd")
+       | INDIRECTINDEXED ->
+         let pch = cpu.data in
+         let pcl = cpu.pcl + cpu.y in
+         let address = (pch lsl 8) lor (pcl land 0xFf) in
+         (* Stdio.printf "pch: %02X pcl: %02X address: %04X\n" pch pcl address; *)
+         (match cpu.ir.inst with
+          | STA | LDA | AND | ORA | EOR | ADC | SBC | CMP ->
+            { cpu with address; pch; pcl; rw = true; cycle = 5 }
+          | _ -> failwith "INDIRECTINDEXED Cycle 4 Not implemnetd")
        | ZEROPAGEY ->
          (match cpu.ir.inst with
           | LDX ->
@@ -1226,6 +1372,14 @@ module M = struct
           | STY ->
             let data = cpu.y in
             { cpu with data; address = cpu.pc; rw = true; cycle = 1 }
+          | JSR ->
+            { cpu with
+              data = cpu.pc land 0xFF
+            ; address = 0x0100 + cpu.sp
+            ; sp = (cpu.sp - 1) land 0xFF
+            ; rw = false
+            ; cycle = 5
+            }
           | ASL | LSR | ROR | ROL | INC | DEC ->
             { cpu with data = cpu.data; rw = false; cycle = 5 }
           | _ -> failwith "Not implemened")
@@ -1360,6 +1514,26 @@ module M = struct
        | _ -> failwith "Addressing not implemented")
     | 5 ->
       (match cpu.ir.mode with
+       | INDIRECT ->
+         let pch = cpu.data in
+         let address = (pch lsl 8) lor cpu.pcl in
+         (match cpu.ir.inst with
+          | JMP -> { cpu with address; pc = address; rw = true; cycle = 1 }
+          | _ -> failwith "Invalid INDIRECT instruction")
+       | IMPLIED ->
+         (match cpu.ir.inst with
+          | BRK ->
+            let sp = (cpu.sp - 1) land 0xFF in
+            { cpu with address = 0xFFFE; sp; rw = true; cycle = 6 }
+          | RTS ->
+            let pch = cpu.data in
+            let pc = (pch lsl 8) lor cpu.pcl in
+            { cpu with pc; pch; rw = true; cycle = 6 }
+          | RTI ->
+            let pcl = cpu.data in
+            let sp = (cpu.sp + 1) land 0xFF in
+            { cpu with pcl; address = sp + 0x0100; sp; rw = true; cycle = 6 }
+          | _ -> failwith "Inst not implemented")
        | ZEROPAGE ->
          (match cpu.ir.inst with
           | ASL | LSR | ROR | ROL | INC | DEC ->
@@ -1386,6 +1560,54 @@ module M = struct
           | LDA | AND | ORA | EOR | ADC | SBC | CMP ->
             { cpu with address; rw = true; cycle = 6 }
           | _ -> failwith "INDEXEDINDIRECT Cycle 5 Not implemnetd")
+       | INDIRECTINDEXED ->
+         if cpu.pcl land 0x100 = 0x100
+         then (
+           (* Stdio.printf "%04X %02X %02X\n" cpu.address cpu.pch cpu.pcl; *)
+           let address = (cpu.address + 0x100) land 0xFFFF in
+           (* Stdio.printf "%04X %02X %02X -> %04X\n" cpu.address cpu.pch cpu.pcl address; *)
+           match cpu.ir.inst with
+           | STA -> { cpu with address; data = cpu.a; rw = false; cycle = 6 }
+           | LDA | AND | ORA | EOR | ADC | SBC | CMP ->
+             { cpu with address; rw = true; cycle = 6 }
+           | _ -> failwith "INDIRECTINDEXED Cycle 5 Not implemnetd")
+         else (
+           match cpu.ir.inst with
+           | LDA ->
+             let data = cpu.data in
+             { cpu with
+               a = data
+             ; sr = set_nz cpu.sr data
+             ; address = cpu.pc
+             ; rw = true
+             ; cycle = 1
+             }
+           | EOR ->
+             let data = cpu.data in
+             let a = cpu.a lxor data in
+             { cpu with a; sr = set_nz cpu.sr a; address = cpu.pc; rw = true; cycle = 1 }
+           | AND ->
+             let data = cpu.data in
+             let a = cpu.a land data in
+             { cpu with a; sr = set_nz cpu.sr a; address = cpu.pc; rw = true; cycle = 1 }
+           | ORA ->
+             let data = cpu.data in
+             let a = cpu.a lor data in
+             { cpu with a; sr = set_nz cpu.sr a; address = cpu.pc; rw = true; cycle = 1 }
+           | ADC ->
+             let data = cpu.data in
+             let a, sr = inst_adc cpu.a data cpu.sr in
+             { cpu with a; sr; address = cpu.pc; rw = true; cycle = 1 }
+           | SBC ->
+             let data = cpu.data in
+             let a, sr = inst_sbc cpu.a data cpu.sr in
+             { cpu with a; sr; address = cpu.pc; rw = true; cycle = 1 }
+           | CMP ->
+             let data = cpu.data in
+             let _, sr = inst_cmp cpu.a data cpu.sr in
+             { cpu with sr; address = cpu.pc; rw = true; cycle = 1 }
+           | STA -> { cpu with data = cpu.a; rw = false; cycle = 6 }
+           | _ -> failwith "Not implemened")
        | ABSOLUTE ->
          let data, sr =
            match cpu.ir.inst with
@@ -1395,6 +1617,7 @@ module M = struct
            | ROL -> inst_rol cpu.data cpu.sr
            | INC -> inst_inc cpu.data cpu.sr
            | DEC -> inst_dec cpu.data cpu.sr
+           | JSR -> cpu.data, cpu.sr
            | _ -> failwith "Inst not implemented"
          in
          { cpu with data; sr; rw = false; cycle = 6 }
@@ -1499,6 +1722,17 @@ module M = struct
        | _ -> failwith "Addressing not implemented")
     | 6 ->
       (match cpu.ir.mode with
+       | IMPLIED ->
+         (match cpu.ir.inst with
+          | BRK -> { cpu with address = 0xFFFF; pcl = cpu.data; rw = true; cycle = 7 }
+          | RTS ->
+            let pc = cpu.pc + 1 in
+            { cpu with pc; address = pc; rw = true; cycle = 1 }
+          | RTI ->
+            let pch = cpu.data in
+            let pc = (pch lsl 8) lor cpu.pcl in
+            { cpu with address = pc; pc; rw = true; cycle = 1 }
+          | _ -> failwith "Inst not implemented")
        | ZEROPAGEX ->
          (match cpu.ir.inst with
           | ASL | LSR | ROR | ROL | INC | DEC ->
@@ -1543,10 +1777,52 @@ module M = struct
             let data = cpu.a in
             { cpu with data; address = cpu.pc; rw = true; cycle = 1 }
           | _ -> failwith "Not implemened")
+       | INDIRECTINDEXED ->
+         (match cpu.ir.inst with
+          | LDA ->
+            let data = cpu.data in
+            { cpu with
+              a = data
+            ; sr = set_nz cpu.sr data
+            ; address = cpu.pc
+            ; rw = true
+            ; cycle = 1
+            }
+          | EOR ->
+            let data = cpu.data in
+            let a = cpu.a lxor data in
+            { cpu with a; sr = set_nz cpu.sr a; address = cpu.pc; rw = true; cycle = 1 }
+          | AND ->
+            let data = cpu.data in
+            let a = cpu.a land data in
+            { cpu with a; sr = set_nz cpu.sr a; address = cpu.pc; rw = true; cycle = 1 }
+          | ORA ->
+            let data = cpu.data in
+            let a = cpu.a lor data in
+            { cpu with a; sr = set_nz cpu.sr a; address = cpu.pc; rw = true; cycle = 1 }
+          | ADC ->
+            let data = cpu.data in
+            let a, sr = inst_adc cpu.a data cpu.sr in
+            { cpu with a; sr; address = cpu.pc; rw = true; cycle = 1 }
+          | SBC ->
+            let data = cpu.data in
+            let a, sr = inst_sbc cpu.a data cpu.sr in
+            { cpu with a; sr; address = cpu.pc; rw = true; cycle = 1 }
+          | CMP ->
+            let data = cpu.data in
+            let _, sr = inst_cmp cpu.a data cpu.sr in
+            { cpu with sr; address = cpu.pc; rw = true; cycle = 1 }
+          | STA ->
+            let data = cpu.a in
+            { cpu with data; address = cpu.pc; rw = true; cycle = 1 }
+          | _ -> failwith "Not implemened")
        | ABSOLUTE ->
          (match cpu.ir.inst with
           | ASL | LSR | ROR | ROL | INC | DEC ->
             { cpu with address = cpu.pc; rw = true; cycle = 1 }
+          | JSR ->
+            let pc = (cpu.pch lsl 8) lor cpu.pcl in
+            { cpu with pc; address = pc; rw = true; cycle = 1 }
           | _ -> failwith "Inst not implemented")
        | ABSOLUTEX ->
          let data, sr =
@@ -1563,6 +1839,13 @@ module M = struct
        | _ -> failwith "Addressing not implemented")
     | 7 ->
       (match cpu.ir.mode with
+       | IMPLIED ->
+         (match cpu.ir.inst with
+          | BRK ->
+            let pch = cpu.data in
+            let address = (pch lsl 8) lor cpu.pcl in
+            { cpu with address; pc = address; rw = true; cycle = 1 }
+          | _ -> failwith "Inst not implemented")
        | ABSOLUTEX ->
          (match cpu.ir.inst with
           | ASL | LSR | ROR | ROL | INC | DEC ->
