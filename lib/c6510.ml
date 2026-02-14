@@ -173,21 +173,28 @@ module M = struct
   [@@deriving sexp]
   ;;
 
-  let inst_to_string inst mode =
+  let inst_to_string inst mode operand =
     match mode with
     | ACCUMULATOR -> Printf.sprintf "%s A" (instruction_to_string inst)
-    | ABSOLUTE -> Printf.sprintf "%s $%%04X" (instruction_to_string inst)
-    | ABSOLUTEX -> Printf.sprintf "%s $%%04X,X" (instruction_to_string inst)
-    | ABSOLUTEY -> Printf.sprintf "%s $%%04X,Y" (instruction_to_string inst)
-    | IMMEDIATE -> Printf.sprintf "%s #%%02X" (instruction_to_string inst)
+    | ABSOLUTE -> Printf.sprintf "%s $%04X" (instruction_to_string inst) operand
+    | ABSOLUTEX -> Printf.sprintf "%s $%04X,X" (instruction_to_string inst) operand
+    | ABSOLUTEY -> Printf.sprintf "%s $%04X,Y" (instruction_to_string inst) operand
+    | IMMEDIATE ->
+      Printf.sprintf "%s #$%02X" (instruction_to_string inst) (operand land 0xFF)
     | IMPLIED -> instruction_to_string inst
-    | INDIRECT -> Printf.sprintf "%s ($%%04X)" (instruction_to_string inst)
-    | INDEXEDINDIRECT -> Printf.sprintf "%s ($%%02X,X)" (instruction_to_string inst)
-    | INDIRECTINDEXED -> Printf.sprintf "%s ($%%02X),Y" (instruction_to_string inst)
-    | RELATIVE -> Printf.sprintf "%s $%%02X" (instruction_to_string inst)
-    | ZEROPAGE -> Printf.sprintf "%s $%%02X" (instruction_to_string inst)
-    | ZEROPAGEX -> Printf.sprintf "%s $%%02X,X" (instruction_to_string inst)
-    | ZEROPAGEY -> Printf.sprintf "%s $%%02X,Y" (instruction_to_string inst)
+    | INDIRECT -> Printf.sprintf "%s ($%04X)" (instruction_to_string inst) operand
+    | INDEXEDINDIRECT ->
+      Printf.sprintf "%s ($%02X,X)" (instruction_to_string inst) (operand land 0xFF)
+    | INDIRECTINDEXED ->
+      Printf.sprintf "%s ($%02X),Y" (instruction_to_string inst) (operand land 0xFF)
+    | RELATIVE ->
+      Printf.sprintf "%s $%02X" (instruction_to_string inst) (operand land 0xFF)
+    | ZEROPAGE ->
+      Printf.sprintf "%s $%02X" (instruction_to_string inst) (operand land 0xFF)
+    | ZEROPAGEX ->
+      Printf.sprintf "%s $%02X,X" (instruction_to_string inst) (operand land 0xFF)
+    | ZEROPAGEY ->
+      Printf.sprintf "%s $%02X,Y" (instruction_to_string inst) (operand land 0xFF)
     | ILLEGAL -> Printf.sprintf "%s" "ILLEGAL"
   ;;
 
@@ -340,6 +347,7 @@ module M = struct
       | 0x94 -> STY, ZEROPAGEX, 2, 4
       | 0x95 -> STA, ZEROPAGEX, 2, 4
       | 0x97 -> JAM, ILLEGAL, 0, 0
+      | 0x96 -> STX, ZEROPAGEY, 2, 4
       | 0x98 -> TYA, IMPLIED, 1, 2
       | 0x99 -> STA, ABSOLUTEY, 3, 4
       | 0x9A -> TXS, IMPLIED, 1, 2
@@ -423,10 +431,10 @@ module M = struct
     String.concat "" [ n; v; "-"; b; d; i; z; c ]
   ;;
 
-  let cpu_to_string cpu =
+  let cpu_to_string cpu operand =
     Printf.sprintf
-      "phy2: %d cycle: %d rw: %b address: 0x%04X data: 0x%02X a: 0x%02X x: 0x%02X y: \
-       0x%02X sp: 0x%02X sr: %8s pc: 0x%02X inst: %s\n"
+      "phy2: %d cycle: %d rw: %5b address: 0x%04X data: 0x%02X a: 0x%02X x: 0x%02X y: \
+       0x%02X sp: 0x%02X sr: %8s pc: 0x%04X inst: %s"
       (if cpu.phy2 then 1 else 0)
       cpu.cycle
       cpu.rw
@@ -438,7 +446,7 @@ module M = struct
       cpu.sp
       (sr_to_string cpu.sr)
       cpu.pc
-      (inst_to_string cpu.ir.inst cpu.ir.mode)
+      (inst_to_string cpu.ir.inst cpu.ir.mode operand)
   ;;
 
   (* Set the Negative and zero flag depending on data value *)
@@ -495,7 +503,8 @@ module M = struct
 
   let inst_cmp a m sr =
     let sr' = sr land lnot 0b0000_0001 lor 0b0000_0001 in
-    inst_sbc a m sr'
+    let res, sr'' = inst_sbc a m sr' in
+    res, sr'' land 0b1000_0011 lor (sr land 0b0111_1100)
   ;;
 
   let inst_inc m sr =
@@ -560,15 +569,40 @@ module M = struct
           | None -> None
           | Some ir ->
             let pc = cpu.pc + 1 in
-            let sr =
-              match ir.mode with
-              | IMPLIED ->
-                (match ir.inst with
-                 | BRK -> cpu.sr lor 0b0000_0100
-                 | _ -> cpu.sr)
-              | _ -> cpu.sr
-            in
-            Some { cpu with ir; address = pc; pc; sr; rw = true; cycle = 2 })
+            (match ir.inst with
+             | BRK ->
+               Some
+                 { cpu with
+                   ir
+                 ; address = pc
+                 ; pc
+                 ; pch = (pc land 0xFF00) lsr 8
+                 ; pcl = pc land 0xFF
+                 ; sr = cpu.sr
+                 ; rw = true
+                 ; cycle = 2
+                 }
+             | _ ->
+               (* Check for interupts *)
+               let brk =
+                 match decode 0x00 with
+                 | None -> failwith "Impossible to decode BRK"
+                 | Some ir -> ir
+               in
+               if cpu.nmi || cpu.reset
+               then Some { cpu with ir = brk; address = pc; pc; rw = true; cycle = 2 }
+               else if cpu.irq && cpu.sr land 0b0000_0100 != 0b0000_0100
+               then
+                 Some
+                   { cpu with
+                     ir = brk
+                   ; address = pc
+                   ; pc
+                   ; sr = cpu.sr lor 0b0000_0100
+                   ; rw = true
+                   ; cycle = 2
+                   }
+               else Some { cpu with ir; address = pc; pc; rw = true; cycle = 2 }))
        | 2 ->
          (match cpu.ir.mode with
           | INDIRECT ->
@@ -687,8 +721,7 @@ module M = struct
              | TXS ->
                Some
                  { cpu with
-                   sp = cpu.x
-                 ; sr = set_nz cpu.sr cpu.x
+                   sp = cpu.x (* ; sr = set_nz cpu.sr cpu.x *)
                  ; address = cpu.pc
                  ; rw = true
                  ; cycle = 1
@@ -714,7 +747,8 @@ module M = struct
                  }
              | PLA ->
                let sp = (cpu.sp + 1) land 0xFF in
-               Some { cpu with address = 0x100 + cpu.sp; sp; rw = true; cycle = 3 }
+               (* Some { cpu with address = 0x100 + cpu.sp; sp; rw = true; cycle = 3 } *)
+               Some { cpu with address = 0x100 + sp; sp; rw = true; cycle = 3 }
              | RTS -> Some { cpu with address = 0x100 + cpu.sp; rw = true; cycle = 3 }
              | RTI -> Some { cpu with address = 0x100 + cpu.sp; rw = true; cycle = 3 }
              | BRK ->
@@ -725,13 +759,13 @@ module M = struct
                Some { cpu with address; pc; data = pch; pcl; pch; rw = false; cycle = 3 }
              | PLP ->
                let sp = (cpu.sp + 1) land 0xFF in
-               Some { cpu with address = 0x100 + cpu.sp; sp; rw = true; cycle = 3 }
+               Some { cpu with address = 0x100 + sp; sp; rw = true; cycle = 3 }
              | PHP ->
                let sp = (cpu.sp - 1) land 0xFF in
                Some
                  { cpu with
                    address = 0x100 + cpu.sp
-                 ; data = cpu.sr
+                 ; data = cpu.sr lor 0b0011_0000
                  ; sp
                  ; rw = false
                  ; cycle = 3
@@ -953,8 +987,13 @@ module M = struct
              | BRK ->
                let sp = (cpu.sp - 1) land 0xFF in
                let address = 0x0100 + sp in
-               let sr = cpu.sr lor 0b0001_0000 in
-               Some { cpu with address; sp; data = cpu.pcl; sr; rw = false; cycle = 4 }
+               let sr =
+                 if cpu.nmi || cpu.irq || cpu.reset
+                 then cpu.sr
+                 else cpu.sr lor 0b0011_0000
+               in
+               let rw = cpu.reset in
+               Some { cpu with address; sp; data = cpu.pcl; sr; rw; cycle = 4 }
              | RTS | RTI ->
                let sp = (cpu.sp + 1) land 0xFF in
                Some { cpu with address = sp + 0x0100; sp; rw = true; cycle = 4 }
@@ -962,13 +1001,14 @@ module M = struct
           | RELATIVE ->
             (match cpu.ir.inst with
              | BCC | BCS | BNE | BEQ | BMI | BPL | BVS | BVC ->
+               (* Stdio.printf "Branch : pc=%04X pcl=%04X pcl= %04X\n" cpu.pc cpu.pcl cpu.pch; *)
                if cpu.pcl > 255
                then (
-                 let pc = (cpu.pc + 0x000 + 1) land 0xFFFF in
+                 let pc = (cpu.pc + 0x100 + 1) land 0xFFFF in
                  Some { cpu with address = pc; pc; rw = true; cycle = 4 })
                else if cpu.pcl < 0
                then (
-                 let pc = (cpu.pc - 0x000 + 1) land 0xFFFF in
+                 let pc = (cpu.pc - 0x100 + 1) land 0xFFFF in
                  Some { cpu with address = pc; pc; rw = true; cycle = 4 })
                else (
                  let pc = cpu.pc + 1 in
@@ -1215,7 +1255,8 @@ module M = struct
              | PLP ->
                Some
                  { cpu with
-                   sr = cpu.data land 0b1110_1111
+                   (* sr = cpu.data land 0b1100_1111 *)
+                   sr = cpu.data lor 0b0011_0000
                  ; address = cpu.pc
                  ; rw = true
                  ; cycle = 1
@@ -1223,7 +1264,7 @@ module M = struct
              | BRK ->
                let sp = (cpu.sp - 1) land 0xFF in
                let address = 0x0100 + sp in
-               Some { cpu with address; data = cpu.sr; sp; rw = false; cycle = 5 }
+               Some { cpu with address; data = cpu.sr; sp; rw = cpu.reset; cycle = 5 }
              | RTS ->
                let pcl = cpu.data in
                let sp = (cpu.sp + 1) land 0xFF in
@@ -1680,7 +1721,11 @@ module M = struct
             (match cpu.ir.inst with
              | BRK ->
                let sp = (cpu.sp - 1) land 0xFF in
-               Some { cpu with address = 0xFFFE; sp; rw = true; cycle = 6 }
+               let sr = if cpu.nmi then cpu.sr else cpu.sr lor 0b0000_0100 in
+               let address =
+                 if cpu.reset then 0xFFFC else if cpu.nmi then 0xFFFA else 0xFFFE
+               in
+               Some { cpu with address; sp; reset = false; sr; rw = true; cycle = 6 }
              | RTS ->
                let pch = cpu.data in
                let pc = (pch lsl 8) lor cpu.pcl in
@@ -1949,7 +1994,10 @@ module M = struct
           | IMPLIED ->
             (match cpu.ir.inst with
              | BRK ->
-               Some { cpu with address = 0xFFFF; pcl = cpu.data; rw = true; cycle = 7 }
+               let address =
+                 if cpu.reset then 0xFFFD else if cpu.nmi then 0xFFFB else 0xFFFF
+               in
+               Some { cpu with address; pcl = cpu.data; rw = true; cycle = 7 }
              | RTS ->
                let pc = cpu.pc + 1 in
                Some { cpu with pc; address = pc; rw = true; cycle = 1 }

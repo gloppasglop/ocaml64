@@ -4,5 +4,6 @@ module type S = sig
 
   val fetch_decode_execute : t -> t
   val create : memory_banks -> t
+  (* val boot : t *)
   (* val computer_to_string : t -> string *)
 end
