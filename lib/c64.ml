@@ -13,6 +13,7 @@ module M = struct
 
   type t =
     { cpu : cpu
+    ; operand : int
     ; bus : bus
     ; banks : memory_banks
     }
@@ -26,16 +27,16 @@ module M = struct
         ; phy2 = false
         ; aec = true
         ; rw = true
-        ; reset = false
+        ; reset = true
         ; address = 0x00FF
         ; data = 0x00
         ; ioport = 0
         ; a = 0
         ; x = 0
         ; y = 0
-        ; sr = 0b0000_0010
-        ; pc = 0x0FF
-        ; sp = 0xFF
+        ; sr = 0b0010_0100
+        ; pc = 0x00FF
+        ; sp = 0x00
         ; ir =
             (match decode 0x00 with
              | Some i -> i
@@ -45,8 +46,9 @@ module M = struct
         ; pch = 0
         }
         (* End of CPU record *)
-    ; bus = { address = 0; data = 0 }
+    ; bus = { address = 0x00FF; data = 0x00 }
     ; banks
+    ; operand = 0x0000
     }
   ;;
 
@@ -95,8 +97,30 @@ module M = struct
   (* { cpu; bus = { address = 0; data = 0 }; memory_banks = banks } *)
   (* ;; *)
 
-  let fetch_decode_execute { cpu; bus; banks } =
-    (* During the first cycle of in struction we need to read from memory we take the value on the bus put it on the data pins of the cpu *)
+  (* let boot = *)
+  (* let mem = Array.create ~len:65536 0xFF in *)
+  (* let address = 0x0000 in *)
+  (* let data = 0x00 in *)
+  (* let bus = { data; address } in *)
+  (* let computer = M.create mem in *)
+  (* { computer with *)
+  (* cpu = *)
+  (* { computer.cpu with *)
+  (* a = 0x00 *)
+  (* ; x = 0x00 *)
+  (* ; y = 0x00 *)
+  (* ; sr = 0b0000_0100 *)
+  (* ; sp = 0x00 *)
+  (* ; pc = address *)
+  (* ; address *)
+  (* ; data *)
+  (* } *)
+  (* ; bus *)
+  (* } *)
+  (* ;; *)
+
+  let fetch_decode_execute { cpu; bus; banks; operand } =
+    (* During the first cycle of an struction we need to read from memory we take the value on the bus put it on the data pins of the cpu *)
     (* TODO: Add a mapping function to access the correct bank *)
     let phy2 = cpu.phy2 in
     let computer =
@@ -105,10 +129,20 @@ module M = struct
       | false ->
         let bus' = { bus with address = cpu.address } in
         let cpu' = { cpu with phy2 = true } in
-        Some { cpu = cpu'; bus = bus'; banks }
+        Some { cpu = cpu'; bus = bus'; banks; operand }
       | true ->
         (match cpu.rdy with
          | true ->
+           let operand =
+             if cpu.cycle = 1
+             then (
+               (* Read the next two bytes from memory *)
+               (* Even if it makes no sense. This is just for debug instruction printing *)
+               let oplow = mem.((bus.address + 1) land 0xFFFF) in
+               let ophigh = mem.((bus.address + 2) land 0xFFFF) in
+               (ophigh lsl 8) lor oplow)
+             else operand
+           in
            let cpu' = tick (Some { cpu with data = bus.data; address = bus.address }) in
            (match cpu' with
             | None -> None
@@ -125,8 +159,9 @@ module M = struct
                     { cpu' with phy2 = false; address = bus'.address; data = bus'.data }
                 ; bus = bus'
                 ; banks
+                ; operand
                 })
-         | false -> Some { cpu; bus; banks = mem })
+         | false -> Some { operand; cpu; bus; banks = mem })
     in
     computer
   ;;
@@ -154,7 +189,18 @@ let init_test_computer program_start pgm =
   let bus = M.{ data; address } in
   load_pgm mem program_start pgm;
   let computer = M.create mem in
-  { computer with cpu = { computer.cpu with pc = address; address; data }; bus }
+  { computer with
+    cpu =
+      { computer.cpu with
+        reset = false
+      ; pc = address
+      ; sp = 0xFF
+      ; sr = 0x02
+      ; address
+      ; data
+      }
+  ; bus
+  }
 ;;
 
 let dump_execution (computer : M.t option) =
@@ -165,7 +211,7 @@ let dump_execution (computer : M.t option) =
       "ab: 0x%04X db: 0x%02X %s\n"
       computer.bus.address
       computer.bus.data
-      (C6510.M.cpu_to_string computer.cpu)
+      (C6510.M.cpu_to_string computer.cpu computer.operand)
 ;;
 
 let dump_executions = List.iter ~f:dump_execution
@@ -190,7 +236,7 @@ let%expect_test "testing NOP IMPLIED (0xEA)" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1001 data: 0xFF a: 0x00 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdiZc pc: 0x1001 inst: NOP |}]
+    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1001 data: 0xFF a: 0x00 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdiZc pc: 0x1001 inst: NOP |}]
 ;;
 
 let%expect_test "testing LDA IMMEDIATE (0xA9) non-zero positive" =
@@ -202,7 +248,7 @@ let%expect_test "testing LDA IMMEDIATE (0xA9) non-zero positive" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdizc pc: 0x1002 inst: LDA #%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdizc pc: 0x1002 inst: LDA #$01 |}]
 ;;
 
 let%expect_test "testing LDA IMMEDIATE (0xA9) non-zero negative" =
@@ -214,7 +260,7 @@ let%expect_test "testing LDA IMMEDIATE (0xA9) non-zero negative" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x81 x: 0x00 y: 0x00 sp: 0xFF sr: Nv-bdizc pc: 0x1002 inst: LDA #%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x81 x: 0x00 y: 0x00 sp: 0xFF sr: Nv-bdizc pc: 0x1002 inst: LDA #$81 |}]
 ;;
 
 let%expect_test "testing LDA IMMEDIATE (0xA9) zero" =
@@ -226,7 +272,7 @@ let%expect_test "testing LDA IMMEDIATE (0xA9) zero" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x00 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdiZc pc: 0x1002 inst: LDA #%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x00 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdiZc pc: 0x1002 inst: LDA #$00 |}]
 ;;
 
 let%expect_test "testing LDX IMMEDIATE (0xA2) non-zero positive" =
@@ -237,7 +283,7 @@ let%expect_test "testing LDX IMMEDIATE (0xA2) non-zero positive" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x00 x: 0x01 y: 0x00 sp: 0xFF sr: nv-bdizc pc: 0x1002 inst: LDX #%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x00 x: 0x01 y: 0x00 sp: 0xFF sr: nv-bdizc pc: 0x1002 inst: LDX #$01 |}]
 ;;
 
 let%expect_test "testing LDX IMMEDIATE (0xA2) non-zero negative" =
@@ -248,7 +294,7 @@ let%expect_test "testing LDX IMMEDIATE (0xA2) non-zero negative" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x00 x: 0x81 y: 0x00 sp: 0xFF sr: Nv-bdizc pc: 0x1002 inst: LDX #%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x00 x: 0x81 y: 0x00 sp: 0xFF sr: Nv-bdizc pc: 0x1002 inst: LDX #$81 |}]
 ;;
 
 let%expect_test "testing LDX IMMEDIATE (0xA2) zero" =
@@ -260,7 +306,7 @@ let%expect_test "testing LDX IMMEDIATE (0xA2) zero" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x00 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdiZc pc: 0x1002 inst: LDX #%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x00 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdiZc pc: 0x1002 inst: LDX #$00 |}]
 ;;
 
 let%expect_test "testing LDY IMMEDIATE (0xA0) non-zero positive" =
@@ -271,7 +317,7 @@ let%expect_test "testing LDY IMMEDIATE (0xA0) non-zero positive" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x00 x: 0x00 y: 0x01 sp: 0xFF sr: nv-bdizc pc: 0x1002 inst: LDY #%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x00 x: 0x00 y: 0x01 sp: 0xFF sr: nv-bdizc pc: 0x1002 inst: LDY #$01 |}]
 ;;
 
 let%expect_test "testing LDY IMMEDIATE (0xA0) non-zero negative" =
@@ -282,7 +328,7 @@ let%expect_test "testing LDY IMMEDIATE (0xA0) non-zero negative" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x00 x: 0x00 y: 0x81 sp: 0xFF sr: Nv-bdizc pc: 0x1002 inst: LDY #%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x00 x: 0x00 y: 0x81 sp: 0xFF sr: Nv-bdizc pc: 0x1002 inst: LDY #$81 |}]
 ;;
 
 let%expect_test "testing LDY IMMEDIATE (0xA0) zero" =
@@ -294,7 +340,7 @@ let%expect_test "testing LDY IMMEDIATE (0xA0) zero" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x00 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdiZc pc: 0x1002 inst: LDY #%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x00 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdiZc pc: 0x1002 inst: LDY #$00 |}]
 ;;
 
 let%expect_test "testing LDA ZEROPAGE (0xA5) non-zero positive" =
@@ -307,7 +353,7 @@ let%expect_test "testing LDA ZEROPAGE (0xA5) non-zero positive" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdizc pc: 0x1002 inst: LDA $%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdizc pc: 0x1002 inst: LDA $44 |}]
 ;;
 
 let%expect_test "testing LDA ZEROPAGE (0xA5) non-zero negative" =
@@ -320,7 +366,7 @@ let%expect_test "testing LDA ZEROPAGE (0xA5) non-zero negative" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x80 x: 0x00 y: 0x00 sp: 0xFF sr: Nv-bdizc pc: 0x1002 inst: LDA $%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x80 x: 0x00 y: 0x00 sp: 0xFF sr: Nv-bdizc pc: 0x1002 inst: LDA $44 |}]
 ;;
 
 let%expect_test "testing LDA ZEROPAGE (0xA5) zero" =
@@ -333,7 +379,7 @@ let%expect_test "testing LDA ZEROPAGE (0xA5) zero" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x00 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdiZc pc: 0x1002 inst: LDA $%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x00 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdiZc pc: 0x1002 inst: LDA $44 |}]
 ;;
 
 let%expect_test "testing LDX ZEROPAGE (0xA6) non-zero positive" =
@@ -346,7 +392,7 @@ let%expect_test "testing LDX ZEROPAGE (0xA6) non-zero positive" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x00 x: 0x01 y: 0x00 sp: 0xFF sr: nv-bdizc pc: 0x1002 inst: LDX $%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x00 x: 0x01 y: 0x00 sp: 0xFF sr: nv-bdizc pc: 0x1002 inst: LDX $44 |}]
 ;;
 
 let%expect_test "testing LDX ZEROPAGE (0xA6) non-zero negative" =
@@ -359,7 +405,7 @@ let%expect_test "testing LDX ZEROPAGE (0xA6) non-zero negative" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x00 x: 0x80 y: 0x00 sp: 0xFF sr: Nv-bdizc pc: 0x1002 inst: LDX $%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x00 x: 0x80 y: 0x00 sp: 0xFF sr: Nv-bdizc pc: 0x1002 inst: LDX $44 |}]
 ;;
 
 let%expect_test "testing LDX ZEROPAGE (0xA6) zero" =
@@ -372,7 +418,7 @@ let%expect_test "testing LDX ZEROPAGE (0xA6) zero" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x00 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdiZc pc: 0x1002 inst: LDX $%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x00 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdiZc pc: 0x1002 inst: LDX $44 |}]
 ;;
 
 let%expect_test "testing LDY ZEROPAGE (0xA4) non-zero positive" =
@@ -385,7 +431,7 @@ let%expect_test "testing LDY ZEROPAGE (0xA4) non-zero positive" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x00 x: 0x00 y: 0x01 sp: 0xFF sr: nv-bdizc pc: 0x1002 inst: LDY $%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x00 x: 0x00 y: 0x01 sp: 0xFF sr: nv-bdizc pc: 0x1002 inst: LDY $44 |}]
 ;;
 
 let%expect_test "testing LDY ZEROPAGE (0xA4) non-zero negative" =
@@ -398,7 +444,7 @@ let%expect_test "testing LDY ZEROPAGE (0xA4) non-zero negative" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x00 x: 0x00 y: 0x80 sp: 0xFF sr: Nv-bdizc pc: 0x1002 inst: LDY $%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x00 x: 0x00 y: 0x80 sp: 0xFF sr: Nv-bdizc pc: 0x1002 inst: LDY $44 |}]
 ;;
 
 let%expect_test "testing LDY ZEROPAGE (0xA4) zero" =
@@ -411,7 +457,7 @@ let%expect_test "testing LDY ZEROPAGE (0xA4) zero" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x00 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdiZc pc: 0x1002 inst: LDY $%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x00 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdiZc pc: 0x1002 inst: LDY $44 |}]
 ;;
 
 let%expect_test "testing EOR ZEROPAGE (0x45) non-zero positive" =
@@ -427,7 +473,7 @@ let%expect_test "testing EOR ZEROPAGE (0x45) non-zero positive" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x03 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdizc pc: 0x1002 inst: EOR $%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x03 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdizc pc: 0x1002 inst: EOR $44 |}]
 ;;
 
 let%expect_test "testing EOR ZEROPAGE (0x45) non-zero negative" =
@@ -443,7 +489,7 @@ let%expect_test "testing EOR ZEROPAGE (0x45) non-zero negative" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x83 x: 0x00 y: 0x00 sp: 0xFF sr: Nv-bdizc pc: 0x1002 inst: EOR $%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x83 x: 0x00 y: 0x00 sp: 0xFF sr: Nv-bdizc pc: 0x1002 inst: EOR $44 |}]
 ;;
 
 let%expect_test "testing EOR ZEROPAGE (0x45) zero" =
@@ -459,7 +505,7 @@ let%expect_test "testing EOR ZEROPAGE (0x45) zero" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x00 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdiZc pc: 0x1002 inst: EOR $%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x00 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdiZc pc: 0x1002 inst: EOR $44 |}]
 ;;
 
 let%expect_test "testing AND ZEROPAGE (0x25) non-zero positive" =
@@ -475,7 +521,7 @@ let%expect_test "testing AND ZEROPAGE (0x25) non-zero positive" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x02 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdizc pc: 0x1002 inst: AND $%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x02 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdizc pc: 0x1002 inst: AND $44 |}]
 ;;
 
 let%expect_test "testing AND ZEROPAGE (0x25) non-zero negative" =
@@ -491,7 +537,7 @@ let%expect_test "testing AND ZEROPAGE (0x25) non-zero negative" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x80 x: 0x00 y: 0x00 sp: 0xFF sr: Nv-bdizc pc: 0x1002 inst: AND $%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x80 x: 0x00 y: 0x00 sp: 0xFF sr: Nv-bdizc pc: 0x1002 inst: AND $44 |}]
 ;;
 
 let%expect_test "testing AND ZEROPAGE (0x25) zero" =
@@ -507,7 +553,7 @@ let%expect_test "testing AND ZEROPAGE (0x25) zero" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x00 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdiZc pc: 0x1002 inst: AND $%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x00 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdiZc pc: 0x1002 inst: AND $44 |}]
 ;;
 
 let%expect_test "testing ORA ZEROPAGE (0x05) non-zero positive" =
@@ -523,7 +569,7 @@ let%expect_test "testing ORA ZEROPAGE (0x05) non-zero positive" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x03 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdizc pc: 0x1002 inst: ORA $%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x03 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdizc pc: 0x1002 inst: ORA $44 |}]
 ;;
 
 let%expect_test "testing ORA ZEROPAGE (0x05) non-zero negative" =
@@ -539,7 +585,7 @@ let%expect_test "testing ORA ZEROPAGE (0x05) non-zero negative" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x83 x: 0x00 y: 0x00 sp: 0xFF sr: Nv-bdizc pc: 0x1002 inst: ORA $%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x83 x: 0x00 y: 0x00 sp: 0xFF sr: Nv-bdizc pc: 0x1002 inst: ORA $44 |}]
 ;;
 
 let%expect_test "testing ORA ZEROPAGE (0x05) zero" =
@@ -555,7 +601,7 @@ let%expect_test "testing ORA ZEROPAGE (0x05) zero" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x00 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdiZc pc: 0x1002 inst: ORA $%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x00 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdiZc pc: 0x1002 inst: ORA $44 |}]
 ;;
 
 let%expect_test "testing ADC Binary ZEROPAGE (0x65) No flags" =
@@ -569,7 +615,7 @@ let%expect_test "testing ADC Binary ZEROPAGE (0x65) No flags" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x05 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdizc pc: 0x1002 inst: ADC $%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x05 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdizc pc: 0x1002 inst: ADC $44 |}]
 ;;
 
 let%expect_test "testing ADC Binary ZEROPAGE (0x65) with incomming Carry " =
@@ -583,7 +629,7 @@ let%expect_test "testing ADC Binary ZEROPAGE (0x65) with incomming Carry " =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x06 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdizc pc: 0x1002 inst: ADC $%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x06 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdizc pc: 0x1002 inst: ADC $44 |}]
 ;;
 
 let%expect_test "testing ADC Binary ZEROPAGE (0x65) Generating Carry " =
@@ -597,7 +643,7 @@ let%expect_test "testing ADC Binary ZEROPAGE (0x65) Generating Carry " =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x00 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdiZC pc: 0x1002 inst: ADC $%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x00 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdiZC pc: 0x1002 inst: ADC $44 |}]
 ;;
 
 let%expect_test "testing ADC Binary ZEROPAGE (0x65) Pos+Pos=Neg " =
@@ -611,7 +657,7 @@ let%expect_test "testing ADC Binary ZEROPAGE (0x65) Pos+Pos=Neg " =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x80 x: 0x00 y: 0x00 sp: 0xFF sr: NV-bdizc pc: 0x1002 inst: ADC $%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x80 x: 0x00 y: 0x00 sp: 0xFF sr: NV-bdizc pc: 0x1002 inst: ADC $44 |}]
 ;;
 
 let%expect_test "testing ADC Binary ZEROPAGE (0x65) Neg+Neg=Pos " =
@@ -625,7 +671,7 @@ let%expect_test "testing ADC Binary ZEROPAGE (0x65) Neg+Neg=Pos " =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x7F x: 0x00 y: 0x00 sp: 0xFF sr: nV-bdizC pc: 0x1002 inst: ADC $%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x7F x: 0x00 y: 0x00 sp: 0xFF sr: nV-bdizC pc: 0x1002 inst: ADC $44 |}]
 ;;
 
 let%expect_test "testing ADC Binary ZEROPAGE (0x65) Pos+Neg " =
@@ -639,7 +685,7 @@ let%expect_test "testing ADC Binary ZEROPAGE (0x65) Pos+Neg " =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0xFF x: 0x00 y: 0x00 sp: 0xFF sr: Nv-bdizc pc: 0x1002 inst: ADC $%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0xFF x: 0x00 y: 0x00 sp: 0xFF sr: Nv-bdizc pc: 0x1002 inst: ADC $44 |}]
 ;;
 
 let%expect_test "testing STA ZEROPAGE (0x85)" =
@@ -656,8 +702,7 @@ let%expect_test "testing STA ZEROPAGE (0x85)" =
    | Some c -> printf "Mem: 0x%04X : 0x%02X" 0x44 c.banks.(0x44));
   [%expect
     {|
-    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdizc pc: 0x1002 inst: STA $%02X
-
+    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdizc pc: 0x1002 inst: STA $44
     Mem: 0x0044 : 0x01
     |}]
 ;;
@@ -676,8 +721,7 @@ let%expect_test "testing STX ZEROPAGE (0x86)" =
   dump_last_execution_mem executions [ 0x44 ];
   [%expect
     {|
-    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: nv-bdizc pc: 0x1002 inst: STX $%02X
-
+    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: nv-bdizc pc: 0x1002 inst: STX $44
     Mem: 0x0044 : 0x02
     |}]
 ;;
@@ -696,8 +740,7 @@ let%expect_test "testing STY ZEROPAGE (0x84)" =
   dump_last_execution_mem executions [ 0x44 ];
   [%expect
     {|
-    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: nv-bdizc pc: 0x1002 inst: STY $%02X
-
+    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: nv-bdizc pc: 0x1002 inst: STY $44
     Mem: 0x0044 : 0x03
     |}]
 ;;
@@ -718,8 +761,7 @@ let%expect_test "testing ASL ZEROPAGE Basic (0x06)" =
   dump_last_execution_mem executions [ 0x44 ];
   [%expect
     {|
-    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: nv-bdizc pc: 0x1002 inst: ASL $%02X
-
+    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: nv-bdizc pc: 0x1002 inst: ASL $44
     Mem: 0x0044 : 0x02
     |}]
 ;;
@@ -740,8 +782,7 @@ let%expect_test "testing ASL ZEROPAGE Shift Out (0x06)" =
   dump_last_execution_mem executions [ 0x44 ];
   [%expect
     {|
-    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: nv-bdiZC pc: 0x1002 inst: ASL $%02X
-
+    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: nv-bdiZC pc: 0x1002 inst: ASL $44
     Mem: 0x0044 : 0x00
     |}]
 ;;
@@ -762,8 +803,7 @@ let%expect_test "testing ASL ZEROPAGE Negative FLag  (0x06)" =
   dump_last_execution_mem executions [ 0x44 ];
   [%expect
     {|
-    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: Nv-bdizc pc: 0x1002 inst: ASL $%02X
-
+    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: Nv-bdizc pc: 0x1002 inst: ASL $44
     Mem: 0x0044 : 0x80
     |}]
 ;;
@@ -784,8 +824,7 @@ let%expect_test "testing LSR ZEROPAGE Basic (0x46)" =
   dump_last_execution_mem executions [ 0x44 ];
   [%expect
     {|
-    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: nv-bdizc pc: 0x1002 inst: LSR $%02X
-
+    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: nv-bdizc pc: 0x1002 inst: LSR $44
     Mem: 0x0044 : 0x01
     |}]
 ;;
@@ -806,8 +845,7 @@ let%expect_test "testing LSR ZEROPAGE Shift Into (0x46)" =
   dump_last_execution_mem executions [ 0x44 ];
   [%expect
     {|
-    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: nv-bdiZC pc: 0x1002 inst: LSR $%02X
-
+    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: nv-bdiZC pc: 0x1002 inst: LSR $44
     Mem: 0x0044 : 0x00
     |}]
 ;;
@@ -828,8 +866,7 @@ let%expect_test "testing LSR ZEROPAGE Hign Bit clear  (0x46)" =
   dump_last_execution_mem executions [ 0x44 ];
   [%expect
     {|
-    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: nv-bdizc pc: 0x1002 inst: LSR $%02X
-
+    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: nv-bdizc pc: 0x1002 inst: LSR $44
     Mem: 0x0044 : 0x40
     |}]
 ;;
@@ -850,8 +887,7 @@ let%expect_test "testing ROR ZEROPAGE Carry to Bit 7 (0x66)" =
   dump_last_execution_mem executions [ 0x44 ];
   [%expect
     {|
-    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: Nv-bdizc pc: 0x1002 inst: ROR $%02X
-
+    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: Nv-bdizc pc: 0x1002 inst: ROR $44
     Mem: 0x0044 : 0x80
     |}]
 ;;
@@ -872,8 +908,7 @@ let%expect_test "testing ROR ZEROPAGE Bit 0 to Carry (0x66)" =
   dump_last_execution_mem executions [ 0x44 ];
   [%expect
     {|
-    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: nv-bdiZC pc: 0x1002 inst: ROR $%02X
-
+    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: nv-bdiZC pc: 0x1002 inst: ROR $44
     Mem: 0x0044 : 0x00
     |}]
 ;;
@@ -894,8 +929,7 @@ let%expect_test "testing ROR ZEROPAGE Negative Flag (0x66)" =
   dump_last_execution_mem executions [ 0x44 ];
   [%expect
     {|
-    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: Nv-bdizC pc: 0x1002 inst: ROR $%02X
-
+    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: Nv-bdizC pc: 0x1002 inst: ROR $44
     Mem: 0x0044 : 0xBF
     |}]
 ;;
@@ -916,8 +950,7 @@ let%expect_test "testing ROL ZEROPAGE Carry to bit 0 (0x26)" =
   dump_last_execution_mem executions [ 0x44 ];
   [%expect
     {|
-    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: nv-bdizc pc: 0x1002 inst: ROL $%02X
-
+    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: nv-bdizc pc: 0x1002 inst: ROL $44
     Mem: 0x0044 : 0x01
     |}]
 ;;
@@ -938,8 +971,7 @@ let%expect_test "testing ROL ZEROPAGE Bit 7 to Carry (0x26)" =
   dump_last_execution_mem executions [ 0x44 ];
   [%expect
     {|
-    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: nv-bdiZC pc: 0x1002 inst: ROL $%02X
-
+    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: nv-bdiZC pc: 0x1002 inst: ROL $44
     Mem: 0x0044 : 0x00
     |}]
 ;;
@@ -960,8 +992,7 @@ let%expect_test "testing ROL ZEROPAGE Negative Flag (0x26)" =
   dump_last_execution_mem executions [ 0x44 ];
   [%expect
     {|
-    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: Nv-bdizc pc: 0x1002 inst: ROL $%02X
-
+    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: Nv-bdizc pc: 0x1002 inst: ROL $44
     Mem: 0x0044 : 0x80
     |}]
 ;;
@@ -982,8 +1013,7 @@ let%expect_test "testing INC ZEROPAGE Add 1 (0xE6)" =
   dump_last_execution_mem executions [ 0x44 ];
   [%expect
     {|
-    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: nv-bdizc pc: 0x1002 inst: INC $%02X
-
+    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: nv-bdizc pc: 0x1002 inst: INC $44
     Mem: 0x0044 : 0x02
     |}]
 ;;
@@ -1004,8 +1034,7 @@ let%expect_test "testing INC ZEROPAGE Negative Flag (0xE6)" =
   dump_last_execution_mem executions [ 0x44 ];
   [%expect
     {|
-    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: Nv-bdizc pc: 0x1002 inst: INC $%02X
-
+    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: Nv-bdizc pc: 0x1002 inst: INC $44
     Mem: 0x0044 : 0x80
     |}]
 ;;
@@ -1026,8 +1055,7 @@ let%expect_test "testing INC ZEROPAGE OverFlow (0xE6)" =
   dump_last_execution_mem executions [ 0x44 ];
   [%expect
     {|
-    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: nv-bdiZc pc: 0x1002 inst: INC $%02X
-
+    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: nv-bdiZc pc: 0x1002 inst: INC $44
     Mem: 0x0044 : 0x00
     |}]
 ;;
@@ -1048,8 +1076,7 @@ let%expect_test "testing DEC ZEROPAGE dec 1 (0xC6)" =
   dump_last_execution_mem executions [ 0x44 ];
   [%expect
     {|
-    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: nv-bdizc pc: 0x1002 inst: DEC $%02X
-
+    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: nv-bdizc pc: 0x1002 inst: DEC $44
     Mem: 0x0044 : 0x01
     |}]
 ;;
@@ -1070,8 +1097,7 @@ let%expect_test "testing DEC ZEROPAGE set Negative Flag (0xC6)" =
   dump_last_execution_mem executions [ 0x44 ];
   [%expect
     {|
-    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: Nv-bdizc pc: 0x1002 inst: DEC $%02X
-
+    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: Nv-bdizc pc: 0x1002 inst: DEC $44
     Mem: 0x0044 : 0xFF
     |}]
 ;;
@@ -1092,8 +1118,7 @@ let%expect_test "testing DEC ZEROPAGE Unset negative (0xC6)" =
   dump_last_execution_mem executions [ 0x44 ];
   [%expect
     {|
-    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: nv-bdizc pc: 0x1002 inst: DEC $%02X
-
+    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: nv-bdizc pc: 0x1002 inst: DEC $44
     Mem: 0x0044 : 0x7F
     |}]
 ;;
@@ -1114,8 +1139,7 @@ let%expect_test "testing DEC ZEROPAGE dec to zero (0xC6)" =
   dump_last_execution_mem executions [ 0x44 ];
   [%expect
     {|
-    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: nv-bdiZc pc: 0x1002 inst: DEC $%02X
-
+    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: nv-bdiZc pc: 0x1002 inst: DEC $44
     Mem: 0x0044 : 0x00
     |}]
 ;;
@@ -1131,7 +1155,7 @@ let%expect_test "testing SBC Binary ZEROPAGE (0xE5) No borrow" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x03 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdizC pc: 0x1002 inst: SBC $%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x03 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdizC pc: 0x1002 inst: SBC $44 |}]
 ;;
 
 let%expect_test "testing SBC Binary ZEROPAGE (0xE5) Substraction with Borrow " =
@@ -1143,7 +1167,7 @@ let%expect_test "testing SBC Binary ZEROPAGE (0xE5) Substraction with Borrow " =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x02 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdizC pc: 0x1002 inst: SBC $%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x02 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdizC pc: 0x1002 inst: SBC $44 |}]
 ;;
 
 let%expect_test "testing SBC Binary ZEROPAGE (0xE5) Underflow " =
@@ -1155,7 +1179,7 @@ let%expect_test "testing SBC Binary ZEROPAGE (0xE5) Underflow " =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0xFF x: 0x00 y: 0x00 sp: 0xFF sr: Nv-bdizc pc: 0x1002 inst: SBC $%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0xFF x: 0x00 y: 0x00 sp: 0xFF sr: Nv-bdizc pc: 0x1002 inst: SBC $44 |}]
 ;;
 
 let%expect_test "testing SBC Binary ZEROPAGE (0xE5) Overflow " =
@@ -1167,7 +1191,7 @@ let%expect_test "testing SBC Binary ZEROPAGE (0xE5) Overflow " =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x7F x: 0x00 y: 0x00 sp: 0xFF sr: nV-bdizC pc: 0x1002 inst: SBC $%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x7F x: 0x00 y: 0x00 sp: 0xFF sr: nV-bdizC pc: 0x1002 inst: SBC $44 |}]
 ;;
 
 let%expect_test "testing CMP ZEROPAGE (0xC5) Equality " =
@@ -1179,7 +1203,7 @@ let%expect_test "testing CMP ZEROPAGE (0xC5) Equality " =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x42 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdiZC pc: 0x1002 inst: CMP $%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x42 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdiZC pc: 0x1002 inst: CMP $44 |}]
 ;;
 
 let%expect_test "testing CMP ZEROPAGE (0xC5) Greater than" =
@@ -1191,7 +1215,7 @@ let%expect_test "testing CMP ZEROPAGE (0xC5) Greater than" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0xFF x: 0x00 y: 0x00 sp: 0xFF sr: Nv-bdizC pc: 0x1002 inst: CMP $%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0xFF x: 0x00 y: 0x00 sp: 0xFF sr: Nv-bdizC pc: 0x1002 inst: CMP $44 |}]
 ;;
 
 let%expect_test "testing CMP ZEROPAGE (0xC5) less than" =
@@ -1203,7 +1227,7 @@ let%expect_test "testing CMP ZEROPAGE (0xC5) less than" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x02 x: 0x00 y: 0x00 sp: 0xFF sr: Nv-bdizc pc: 0x1002 inst: CMP $%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x02 x: 0x00 y: 0x00 sp: 0xFF sr: Nv-bdizc pc: 0x1002 inst: CMP $44 |}]
 ;;
 
 let%expect_test "testing BIT ZEROPAGE (0x24) specific bit" =
@@ -1215,7 +1239,7 @@ let%expect_test "testing BIT ZEROPAGE (0x24) specific bit" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x08 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdizc pc: 0x1002 inst: BIT $%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x08 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdizc pc: 0x1002 inst: BIT $44 |}]
 ;;
 
 let%expect_test "testing BIT ZEROPAGE (0x24) Negative/Overflow" =
@@ -1227,7 +1251,7 @@ let%expect_test "testing BIT ZEROPAGE (0x24) Negative/Overflow" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x00 x: 0x00 y: 0x00 sp: 0xFF sr: NV-bdiZc pc: 0x1002 inst: BIT $%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x00 x: 0x00 y: 0x00 sp: 0xFF sr: NV-bdiZc pc: 0x1002 inst: BIT $44 |}]
 ;;
 
 let%expect_test "testing BIT ZEROPAGE (0x24) Masking" =
@@ -1239,7 +1263,7 @@ let%expect_test "testing BIT ZEROPAGE (0x24) Masking" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x00 y: 0x00 sp: 0xFF sr: NV-bdiZc pc: 0x1002 inst: BIT $%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x00 y: 0x00 sp: 0xFF sr: NV-bdiZc pc: 0x1002 inst: BIT $44 |}]
 ;;
 
 let%expect_test "testing CPX ZEROPAGE (0xE4) Equality " =
@@ -1253,7 +1277,21 @@ let%expect_test "testing CPX ZEROPAGE (0xE4) Equality " =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x42 y: 0x03 sp: 0xFF sr: nv-bdiZC pc: 0x1002 inst: CPX $%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x42 y: 0x03 sp: 0xFF sr: nv-bdiZC pc: 0x1002 inst: CPX $44 |}]
+;;
+
+let%expect_test "testing CPX ZEROPAGE (0xE4) Overflow " =
+  let cycles = 3 in
+  let pgm = [ 0xE4; 0x44 ] in
+  let computer = init_test_computer 0x1000 pgm in
+  let computer =
+    { computer with cpu = { computer.cpu with a = 0x01; x = 0x80; y = 0x03; sr = 0x30 } }
+  in
+  computer.banks.(0x44) <- 0x7F;
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x80 y: 0x03 sp: 0xFF sr: nv-BdizC pc: 0x1002 inst: CPX $44 |}]
 ;;
 
 let%expect_test "testing CPX ZEROPAGE (0xE4) Greater than" =
@@ -1267,7 +1305,7 @@ let%expect_test "testing CPX ZEROPAGE (0xE4) Greater than" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0xFF y: 0x03 sp: 0xFF sr: Nv-bdizC pc: 0x1002 inst: CPX $%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0xFF y: 0x03 sp: 0xFF sr: Nv-bdizC pc: 0x1002 inst: CPX $44 |}]
 ;;
 
 let%expect_test "testing CPX ZEROPAGE (0xE4) less than" =
@@ -1281,7 +1319,7 @@ let%expect_test "testing CPX ZEROPAGE (0xE4) less than" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: Nv-bdizc pc: 0x1002 inst: CPX $%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: Nv-bdizc pc: 0x1002 inst: CPX $44 |}]
 ;;
 
 let%expect_test "testing CPY ZEROPAGE (0xC4) Equality " =
@@ -1295,7 +1333,7 @@ let%expect_test "testing CPY ZEROPAGE (0xC4) Equality " =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x42 sp: 0xFF sr: nv-bdiZC pc: 0x1002 inst: CPY $%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x42 sp: 0xFF sr: nv-bdiZC pc: 0x1002 inst: CPY $44 |}]
 ;;
 
 let%expect_test "testing CPY ZEROPAGE (0xC4) Greater than" =
@@ -1309,7 +1347,7 @@ let%expect_test "testing CPY ZEROPAGE (0xC4) Greater than" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0xFF sp: 0xFF sr: Nv-bdizC pc: 0x1002 inst: CPY $%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0xFF sp: 0xFF sr: Nv-bdizC pc: 0x1002 inst: CPY $44 |}]
 ;;
 
 let%expect_test "testing CPY ZEROPAGE (0xC4) less than" =
@@ -1323,7 +1361,7 @@ let%expect_test "testing CPY ZEROPAGE (0xC4) less than" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x02 sp: 0xFF sr: Nv-bdizc pc: 0x1002 inst: CPY $%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x02 sp: 0xFF sr: Nv-bdizc pc: 0x1002 inst: CPY $44 |}]
 ;;
 
 let%expect_test "testing ADC Binary IMMEDIATE (0x69) No flags" =
@@ -1336,7 +1374,7 @@ let%expect_test "testing ADC Binary IMMEDIATE (0x69) No flags" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x05 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdizc pc: 0x1002 inst: ADC #%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x05 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdizc pc: 0x1002 inst: ADC #$03 |}]
 ;;
 
 let%expect_test "testing ADC Binary IMMEDIATE (0x69) with incomming Carry " =
@@ -1349,7 +1387,7 @@ let%expect_test "testing ADC Binary IMMEDIATE (0x69) with incomming Carry " =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x06 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdizc pc: 0x1002 inst: ADC #%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x06 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdizc pc: 0x1002 inst: ADC #$03 |}]
 ;;
 
 let%expect_test "testing ADC Binary IMMEDIATE (0x69) Generating Carry " =
@@ -1362,7 +1400,7 @@ let%expect_test "testing ADC Binary IMMEDIATE (0x69) Generating Carry " =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x00 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdiZC pc: 0x1002 inst: ADC #%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x00 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdiZC pc: 0x1002 inst: ADC #$FF |}]
 ;;
 
 let%expect_test "testing ADC Binary IMMEDIATE (0x69) Pos+Pos=Neg " =
@@ -1375,7 +1413,7 @@ let%expect_test "testing ADC Binary IMMEDIATE (0x69) Pos+Pos=Neg " =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x80 x: 0x00 y: 0x00 sp: 0xFF sr: NV-bdizc pc: 0x1002 inst: ADC #%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x80 x: 0x00 y: 0x00 sp: 0xFF sr: NV-bdizc pc: 0x1002 inst: ADC #$01 |}]
 ;;
 
 let%expect_test "testing ADC Binary IMMEDIATE (0x69) Neg+Neg=Pos " =
@@ -1388,7 +1426,7 @@ let%expect_test "testing ADC Binary IMMEDIATE (0x69) Neg+Neg=Pos " =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x7F x: 0x00 y: 0x00 sp: 0xFF sr: nV-bdizC pc: 0x1002 inst: ADC #%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x7F x: 0x00 y: 0x00 sp: 0xFF sr: nV-bdizC pc: 0x1002 inst: ADC #$FF |}]
 ;;
 
 let%expect_test "testing ADC Binary IMMEDIATE (0x69) Pos+Neg " =
@@ -1401,7 +1439,7 @@ let%expect_test "testing ADC Binary IMMEDIATE (0x69) Pos+Neg " =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0xFF x: 0x00 y: 0x00 sp: 0xFF sr: Nv-bdizc pc: 0x1002 inst: ADC #%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0xFF x: 0x00 y: 0x00 sp: 0xFF sr: Nv-bdizc pc: 0x1002 inst: ADC #$80 |}]
 ;;
 
 let%expect_test "testing AND IMMEDIATE (0x29) non-zero positive" =
@@ -1416,7 +1454,7 @@ let%expect_test "testing AND IMMEDIATE (0x29) non-zero positive" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x02 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdizc pc: 0x1002 inst: AND #%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x02 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdizc pc: 0x1002 inst: AND #$03 |}]
 ;;
 
 let%expect_test "testing AND IMMEDIATE (0x29) non-zero negative" =
@@ -1431,7 +1469,7 @@ let%expect_test "testing AND IMMEDIATE (0x29) non-zero negative" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x80 x: 0x00 y: 0x00 sp: 0xFF sr: Nv-bdizc pc: 0x1002 inst: AND #%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x80 x: 0x00 y: 0x00 sp: 0xFF sr: Nv-bdizc pc: 0x1002 inst: AND #$81 |}]
 ;;
 
 let%expect_test "testing AND IMMEDIATE (0x29) zero" =
@@ -1447,7 +1485,7 @@ let%expect_test "testing AND IMMEDIATE (0x29) zero" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x00 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdiZc pc: 0x1002 inst: AND #%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x00 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdiZc pc: 0x1002 inst: AND #$02 |}]
 ;;
 
 let%expect_test "testing CMP ZEROPAGE (0xC9) Equality " =
@@ -1458,7 +1496,7 @@ let%expect_test "testing CMP ZEROPAGE (0xC9) Equality " =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x42 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdiZC pc: 0x1002 inst: CMP #%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x42 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdiZC pc: 0x1002 inst: CMP #$42 |}]
 ;;
 
 let%expect_test "testing CMP ZEROPAGE (0xC9) Greater than" =
@@ -1469,7 +1507,7 @@ let%expect_test "testing CMP ZEROPAGE (0xC9) Greater than" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0xFF x: 0x00 y: 0x00 sp: 0xFF sr: Nv-bdizC pc: 0x1002 inst: CMP #%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0xFF x: 0x00 y: 0x00 sp: 0xFF sr: Nv-bdizC pc: 0x1002 inst: CMP #$01 |}]
 ;;
 
 let%expect_test "testing CMP ZEROPAGE (0xC9) less than" =
@@ -1480,7 +1518,7 @@ let%expect_test "testing CMP ZEROPAGE (0xC9) less than" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x02 x: 0x00 y: 0x00 sp: 0xFF sr: Nv-bdizc pc: 0x1002 inst: CMP #%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x02 x: 0x00 y: 0x00 sp: 0xFF sr: Nv-bdizc pc: 0x1002 inst: CMP #$03 |}]
 ;;
 
 let%expect_test "testing CPX IMMEDIATE (0xE0) Equality " =
@@ -1493,7 +1531,7 @@ let%expect_test "testing CPX IMMEDIATE (0xE0) Equality " =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x42 y: 0x03 sp: 0xFF sr: nv-bdiZC pc: 0x1002 inst: CPX #%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x42 y: 0x03 sp: 0xFF sr: nv-bdiZC pc: 0x1002 inst: CPX #$42 |}]
 ;;
 
 let%expect_test "testing CPX IMMEDIATE (0xE0) Greater than" =
@@ -1506,7 +1544,7 @@ let%expect_test "testing CPX IMMEDIATE (0xE0) Greater than" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0xFF y: 0x03 sp: 0xFF sr: Nv-bdizC pc: 0x1002 inst: CPX #%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0xFF y: 0x03 sp: 0xFF sr: Nv-bdizC pc: 0x1002 inst: CPX #$01 |}]
 ;;
 
 let%expect_test "testing CPX IMMEDIATE (0xE0) less than" =
@@ -1519,7 +1557,7 @@ let%expect_test "testing CPX IMMEDIATE (0xE0) less than" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: Nv-bdizc pc: 0x1002 inst: CPX #%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: Nv-bdizc pc: 0x1002 inst: CPX #$03 |}]
 ;;
 
 let%expect_test "testing CPY IMMEDIATE (0xC0) Equality " =
@@ -1532,7 +1570,7 @@ let%expect_test "testing CPY IMMEDIATE (0xC0) Equality " =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x42 sp: 0xFF sr: nv-bdiZC pc: 0x1002 inst: CPY #%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x42 sp: 0xFF sr: nv-bdiZC pc: 0x1002 inst: CPY #$42 |}]
 ;;
 
 let%expect_test "testing CPY IMMEDIATE (0xC0) Greater than" =
@@ -1545,7 +1583,7 @@ let%expect_test "testing CPY IMMEDIATE (0xC0) Greater than" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0xFF sp: 0xFF sr: Nv-bdizC pc: 0x1002 inst: CPY #%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0xFF sp: 0xFF sr: Nv-bdizC pc: 0x1002 inst: CPY #$01 |}]
 ;;
 
 let%expect_test "testing CPY IMMEDIATE (0xC0) less than" =
@@ -1558,7 +1596,7 @@ let%expect_test "testing CPY IMMEDIATE (0xC0) less than" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x02 sp: 0xFF sr: Nv-bdizc pc: 0x1002 inst: CPY #%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x02 sp: 0xFF sr: Nv-bdizc pc: 0x1002 inst: CPY #$03 |}]
 ;;
 
 let%expect_test "testing EOR IMMEDIATE (0x49) non-zero positive" =
@@ -1573,7 +1611,7 @@ let%expect_test "testing EOR IMMEDIATE (0x49) non-zero positive" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x03 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdizc pc: 0x1002 inst: EOR #%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x03 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdizc pc: 0x1002 inst: EOR #$01 |}]
 ;;
 
 let%expect_test "testing EOR IMMEDIATE (0x49) non-zero negative" =
@@ -1588,7 +1626,7 @@ let%expect_test "testing EOR IMMEDIATE (0x49) non-zero negative" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x83 x: 0x00 y: 0x00 sp: 0xFF sr: Nv-bdizc pc: 0x1002 inst: EOR #%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x83 x: 0x00 y: 0x00 sp: 0xFF sr: Nv-bdizc pc: 0x1002 inst: EOR #$81 |}]
 ;;
 
 let%expect_test "testing EOR IMMEDIATE (0x49) zero" =
@@ -1603,7 +1641,7 @@ let%expect_test "testing EOR IMMEDIATE (0x49) zero" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x00 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdiZc pc: 0x1002 inst: EOR #%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x00 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdiZc pc: 0x1002 inst: EOR #$02 |}]
 ;;
 
 let%expect_test "testing ORA IMMEDIATE (0x09) non-zero positive" =
@@ -1618,7 +1656,7 @@ let%expect_test "testing ORA IMMEDIATE (0x09) non-zero positive" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x03 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdizc pc: 0x1002 inst: ORA #%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x03 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdizc pc: 0x1002 inst: ORA #$03 |}]
 ;;
 
 let%expect_test "testing ORA IMMEDIATE (0x09) non-zero negative" =
@@ -1633,7 +1671,7 @@ let%expect_test "testing ORA IMMEDIATE (0x09) non-zero negative" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x83 x: 0x00 y: 0x00 sp: 0xFF sr: Nv-bdizc pc: 0x1002 inst: ORA #%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x83 x: 0x00 y: 0x00 sp: 0xFF sr: Nv-bdizc pc: 0x1002 inst: ORA #$81 |}]
 ;;
 
 let%expect_test "testing ORA IMMEDIATE (0x09) zero" =
@@ -1648,7 +1686,7 @@ let%expect_test "testing ORA IMMEDIATE (0x09) zero" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x00 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdiZc pc: 0x1002 inst: ORA #%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x00 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdiZc pc: 0x1002 inst: ORA #$00 |}]
 ;;
 
 let%expect_test "testing LDA ABSOLUTE (0xAD) non-zero positive" =
@@ -1659,7 +1697,7 @@ let%expect_test "testing LDA ABSOLUTE (0xAD) non-zero positive" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x01 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdizc pc: 0x1003 inst: LDA $%04X |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x01 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdizc pc: 0x1003 inst: LDA $4269 |}]
 ;;
 
 let%expect_test "testing LDA ABSOLUTE (0xAD) non-zero negative" =
@@ -1670,7 +1708,7 @@ let%expect_test "testing LDA ABSOLUTE (0xAD) non-zero negative" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x80 x: 0x00 y: 0x00 sp: 0xFF sr: Nv-bdizc pc: 0x1003 inst: LDA $%04X |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x80 x: 0x00 y: 0x00 sp: 0xFF sr: Nv-bdizc pc: 0x1003 inst: LDA $4269 |}]
 ;;
 
 let%expect_test "testing LDA ABSOLUTE (0xAD) zero" =
@@ -1681,7 +1719,7 @@ let%expect_test "testing LDA ABSOLUTE (0xAD) zero" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x00 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdiZc pc: 0x1003 inst: LDA $%04X |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x00 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdiZc pc: 0x1003 inst: LDA $4269 |}]
 ;;
 
 let%expect_test "testing LDX ABSOLUTE (0xAE) non-zero positive" =
@@ -1693,7 +1731,7 @@ let%expect_test "testing LDX ABSOLUTE (0xAE) non-zero positive" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x00 x: 0x01 y: 0x00 sp: 0xFF sr: nv-bdizc pc: 0x1003 inst: LDX $%04X |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x00 x: 0x01 y: 0x00 sp: 0xFF sr: nv-bdizc pc: 0x1003 inst: LDX $4469 |}]
 ;;
 
 let%expect_test "testing LDX ABSOLUTE (0xAE) non-zero negative" =
@@ -1704,7 +1742,7 @@ let%expect_test "testing LDX ABSOLUTE (0xAE) non-zero negative" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x00 x: 0x80 y: 0x00 sp: 0xFF sr: Nv-bdizc pc: 0x1003 inst: LDX $%04X |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x00 x: 0x80 y: 0x00 sp: 0xFF sr: Nv-bdizc pc: 0x1003 inst: LDX $4469 |}]
 ;;
 
 let%expect_test "testing LDX ABSOLUTE (0xAE) zero" =
@@ -1715,7 +1753,7 @@ let%expect_test "testing LDX ABSOLUTE (0xAE) zero" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x00 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdiZc pc: 0x1003 inst: LDX $%04X |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x00 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdiZc pc: 0x1003 inst: LDX $4469 |}]
 ;;
 
 let%expect_test "testing LDY IMMEDIATE (0xAC) non-zero positive" =
@@ -1726,7 +1764,7 @@ let%expect_test "testing LDY IMMEDIATE (0xAC) non-zero positive" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x00 x: 0x00 y: 0x01 sp: 0xFF sr: nv-bdizc pc: 0x1003 inst: LDY $%04X |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x00 x: 0x00 y: 0x01 sp: 0xFF sr: nv-bdizc pc: 0x1003 inst: LDY $4469 |}]
 ;;
 
 let%expect_test "testing LDY IMMEDIATE (0xAC) non-zero negative" =
@@ -1737,7 +1775,7 @@ let%expect_test "testing LDY IMMEDIATE (0xAC) non-zero negative" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x00 x: 0x00 y: 0x80 sp: 0xFF sr: Nv-bdizc pc: 0x1003 inst: LDY $%04X |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x00 x: 0x00 y: 0x80 sp: 0xFF sr: Nv-bdizc pc: 0x1003 inst: LDY $4469 |}]
 ;;
 
 let%expect_test "testing LDY IMMEDIATE (0xAC) zero" =
@@ -1748,7 +1786,7 @@ let%expect_test "testing LDY IMMEDIATE (0xAC) zero" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x00 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdiZc pc: 0x1003 inst: LDY $%04X |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x00 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdiZc pc: 0x1003 inst: LDY $4469 |}]
 ;;
 
 let%expect_test "testing ORA ABSOLUTE (0x0D) non-zero positive" =
@@ -1764,7 +1802,7 @@ let%expect_test "testing ORA ABSOLUTE (0x0D) non-zero positive" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x03 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdizc pc: 0x1003 inst: ORA $%04X |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x03 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdizc pc: 0x1003 inst: ORA $4469 |}]
 ;;
 
 let%expect_test "testing ORA ABSOLUTE (0x0D) non-zero negative" =
@@ -1780,7 +1818,7 @@ let%expect_test "testing ORA ABSOLUTE (0x0D) non-zero negative" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x83 x: 0x00 y: 0x00 sp: 0xFF sr: Nv-bdizc pc: 0x1003 inst: ORA $%04X |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x83 x: 0x00 y: 0x00 sp: 0xFF sr: Nv-bdizc pc: 0x1003 inst: ORA $%04X |}]
 ;;
 
 let%expect_test "testing ORA ABSOLUTE (0x0D) zero" =
@@ -1796,7 +1834,7 @@ let%expect_test "testing ORA ABSOLUTE (0x0D) zero" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x00 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdiZc pc: 0x1003 inst: ORA $%04X |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x00 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdiZc pc: 0x1003 inst: ORA $4469 |}]
 ;;
 
 let%expect_test "testing ADC Binary ABSOLUTE (0x6D) No flags" =
@@ -1810,7 +1848,7 @@ let%expect_test "testing ADC Binary ABSOLUTE (0x6D) No flags" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x05 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdizc pc: 0x1003 inst: ADC $%04X |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x05 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdizc pc: 0x1003 inst: ADC $4469 |}]
 ;;
 
 let%expect_test "testing ADC Binary ABSOLUTE (0x6D) with incomming Carry " =
@@ -1824,7 +1862,7 @@ let%expect_test "testing ADC Binary ABSOLUTE (0x6D) with incomming Carry " =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x06 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdizc pc: 0x1003 inst: ADC $%04X |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x06 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdizc pc: 0x1003 inst: ADC $4469 |}]
 ;;
 
 let%expect_test "testing ADC Binary ABSOLUTE (0x6D) Generating Carry " =
@@ -1838,7 +1876,7 @@ let%expect_test "testing ADC Binary ABSOLUTE (0x6D) Generating Carry " =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x00 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdiZC pc: 0x1003 inst: ADC $%04X |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x00 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdiZC pc: 0x1003 inst: ADC $4469 |}]
 ;;
 
 let%expect_test "testing ADC Binary ABSOLUTE (0x6D) Pos+Pos=Neg " =
@@ -1852,7 +1890,7 @@ let%expect_test "testing ADC Binary ABSOLUTE (0x6D) Pos+Pos=Neg " =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x80 x: 0x00 y: 0x00 sp: 0xFF sr: NV-bdizc pc: 0x1003 inst: ADC $%04X |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x80 x: 0x00 y: 0x00 sp: 0xFF sr: NV-bdizc pc: 0x1003 inst: ADC $4469 |}]
 ;;
 
 let%expect_test "testing ADC Binary ABSOLUTE (0x6D) Neg+Neg=Pos " =
@@ -1866,7 +1904,7 @@ let%expect_test "testing ADC Binary ABSOLUTE (0x6D) Neg+Neg=Pos " =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x7F x: 0x00 y: 0x00 sp: 0xFF sr: nV-bdizC pc: 0x1003 inst: ADC $%04X |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x7F x: 0x00 y: 0x00 sp: 0xFF sr: nV-bdizC pc: 0x1003 inst: ADC $4469 |}]
 ;;
 
 let%expect_test "testing ADC Binary ABSOLUTE (0x6D) Pos+Neg " =
@@ -1880,7 +1918,7 @@ let%expect_test "testing ADC Binary ABSOLUTE (0x6D) Pos+Neg " =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0xFF x: 0x00 y: 0x00 sp: 0xFF sr: Nv-bdizc pc: 0x1003 inst: ADC $%04X |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0xFF x: 0x00 y: 0x00 sp: 0xFF sr: Nv-bdizc pc: 0x1003 inst: ADC $4469 |}]
 ;;
 
 let%expect_test "testing AND ABSOLUTE (0x2D) non-zero positive" =
@@ -1896,7 +1934,7 @@ let%expect_test "testing AND ABSOLUTE (0x2D) non-zero positive" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x02 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdizc pc: 0x1003 inst: AND $%04X |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x02 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdizc pc: 0x1003 inst: AND $4469 |}]
 ;;
 
 let%expect_test "testing AND ABSOLUTE (0x2D) non-zero negative" =
@@ -1912,7 +1950,7 @@ let%expect_test "testing AND ABSOLUTE (0x2D) non-zero negative" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x80 x: 0x00 y: 0x00 sp: 0xFF sr: Nv-bdizc pc: 0x1003 inst: AND $%04X |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x80 x: 0x00 y: 0x00 sp: 0xFF sr: Nv-bdizc pc: 0x1003 inst: AND $4469 |}]
 ;;
 
 let%expect_test "testing AND ABSOLUTE (0x2D) zero" =
@@ -1928,7 +1966,7 @@ let%expect_test "testing AND ABSOLUTE (0x2D) zero" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x00 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdiZc pc: 0x1003 inst: AND $%04X |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x00 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdiZc pc: 0x1003 inst: AND $4469 |}]
 ;;
 
 let%expect_test "testing BIT ABSOLUTE (0x2C) specific bit" =
@@ -1940,7 +1978,7 @@ let%expect_test "testing BIT ABSOLUTE (0x2C) specific bit" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x08 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdizc pc: 0x1003 inst: BIT $%04X |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x08 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdizc pc: 0x1003 inst: BIT $4469 |}]
 ;;
 
 let%expect_test "testing BIT ABSOLUTE (0x2C) Negative/Overflow" =
@@ -1952,7 +1990,7 @@ let%expect_test "testing BIT ABSOLUTE (0x2C) Negative/Overflow" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x00 x: 0x00 y: 0x00 sp: 0xFF sr: NV-bdiZc pc: 0x1003 inst: BIT $%04X |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x00 x: 0x00 y: 0x00 sp: 0xFF sr: NV-bdiZc pc: 0x1003 inst: BIT $4469 |}]
 ;;
 
 let%expect_test "testing BIT ABSOLUTE (0x2C) Masking" =
@@ -1964,7 +2002,7 @@ let%expect_test "testing BIT ABSOLUTE (0x2C) Masking" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x01 x: 0x00 y: 0x00 sp: 0xFF sr: NV-bdiZc pc: 0x1003 inst: BIT $%04X |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x01 x: 0x00 y: 0x00 sp: 0xFF sr: NV-bdiZc pc: 0x1003 inst: BIT $4469 |}]
 ;;
 
 let%expect_test "testing CMP ABSOLUTE (0xCD) Equality " =
@@ -1976,7 +2014,7 @@ let%expect_test "testing CMP ABSOLUTE (0xCD) Equality " =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x42 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdiZC pc: 0x1003 inst: CMP $%04X |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x42 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdiZC pc: 0x1003 inst: CMP $4469 |}]
 ;;
 
 let%expect_test "testing CMP ABSOLUTE (0xCD) Greater than" =
@@ -1988,7 +2026,7 @@ let%expect_test "testing CMP ABSOLUTE (0xCD) Greater than" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0xFF x: 0x00 y: 0x00 sp: 0xFF sr: Nv-bdizC pc: 0x1003 inst: CMP $%04X |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0xFF x: 0x00 y: 0x00 sp: 0xFF sr: Nv-bdizC pc: 0x1003 inst: CMP $4469 |}]
 ;;
 
 let%expect_test "testing CMP ABSOLUTE (0xCD) less than" =
@@ -2000,7 +2038,7 @@ let%expect_test "testing CMP ABSOLUTE (0xCD) less than" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x02 x: 0x00 y: 0x00 sp: 0xFF sr: Nv-bdizc pc: 0x1003 inst: CMP $%04X |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x02 x: 0x00 y: 0x00 sp: 0xFF sr: Nv-bdizc pc: 0x1003 inst: CMP $4469 |}]
 ;;
 
 let%expect_test "testing CPX ABSOLUTE (0xEC) Equality " =
@@ -2014,7 +2052,7 @@ let%expect_test "testing CPX ABSOLUTE (0xEC) Equality " =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x01 x: 0x42 y: 0x03 sp: 0xFF sr: nv-bdiZC pc: 0x1003 inst: CPX $%04X |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x01 x: 0x42 y: 0x03 sp: 0xFF sr: nv-bdiZC pc: 0x1003 inst: CPX $4469 |}]
 ;;
 
 let%expect_test "testing CPX ABSOLUTE (0xEC) Greater than" =
@@ -2028,7 +2066,7 @@ let%expect_test "testing CPX ABSOLUTE (0xEC) Greater than" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x01 x: 0xFF y: 0x03 sp: 0xFF sr: Nv-bdizC pc: 0x1003 inst: CPX $%04X |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x01 x: 0xFF y: 0x03 sp: 0xFF sr: Nv-bdizC pc: 0x1003 inst: CPX $4469 |}]
 ;;
 
 let%expect_test "testing CPX ZEROPAGE (0xEC) less than" =
@@ -2042,7 +2080,7 @@ let%expect_test "testing CPX ZEROPAGE (0xEC) less than" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: Nv-bdizc pc: 0x1003 inst: CPX $%04X |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: Nv-bdizc pc: 0x1003 inst: CPX $4469 |}]
 ;;
 
 let%expect_test "testing CPY ABSOLUTE (0xCC) Equality " =
@@ -2056,7 +2094,7 @@ let%expect_test "testing CPY ABSOLUTE (0xCC) Equality " =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x42 sp: 0xFF sr: nv-bdiZC pc: 0x1003 inst: CPY $%04X |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x42 sp: 0xFF sr: nv-bdiZC pc: 0x1003 inst: CPY $4469 |}]
 ;;
 
 let%expect_test "testing CPY ABSOLUTE (0xCC) Greater than" =
@@ -2070,7 +2108,7 @@ let%expect_test "testing CPY ABSOLUTE (0xCC) Greater than" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0xFF sp: 0xFF sr: Nv-bdizC pc: 0x1003 inst: CPY $%04X |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0xFF sp: 0xFF sr: Nv-bdizC pc: 0x1003 inst: CPY $4469 |}]
 ;;
 
 let%expect_test "testing CPY ABSOLUTE (0xCC) less than" =
@@ -2084,7 +2122,7 @@ let%expect_test "testing CPY ABSOLUTE (0xCC) less than" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x02 sp: 0xFF sr: Nv-bdizc pc: 0x1003 inst: CPY $%04X |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x02 sp: 0xFF sr: Nv-bdizc pc: 0x1003 inst: CPY $4469 |}]
 ;;
 
 let%expect_test "testing EOR ABSOLUTE (0x4D) non-zero positive" =
@@ -2100,7 +2138,7 @@ let%expect_test "testing EOR ABSOLUTE (0x4D) non-zero positive" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x03 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdizc pc: 0x1003 inst: EOR $%04X |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x03 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdizc pc: 0x1003 inst: EOR $4469 |}]
 ;;
 
 let%expect_test "testing EOR ABSOLUTE (0x4D) non-zero negative" =
@@ -2116,7 +2154,7 @@ let%expect_test "testing EOR ABSOLUTE (0x4D) non-zero negative" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x83 x: 0x00 y: 0x00 sp: 0xFF sr: Nv-bdizc pc: 0x1003 inst: EOR $%04X |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x83 x: 0x00 y: 0x00 sp: 0xFF sr: Nv-bdizc pc: 0x1003 inst: EOR $4469 |}]
 ;;
 
 let%expect_test "testing EOR ABSOLUTE (0x4D) zero" =
@@ -2132,7 +2170,7 @@ let%expect_test "testing EOR ABSOLUTE (0x4D) zero" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x00 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdiZc pc: 0x1003 inst: EOR $%04X |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x00 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdiZc pc: 0x1003 inst: EOR $4469 |}]
 ;;
 
 let%expect_test "testing STA IMMEDIATE (0x8D)" =
@@ -2145,8 +2183,7 @@ let%expect_test "testing STA IMMEDIATE (0x8D)" =
   dump_last_execution_mem executions [ 0x4469 ];
   [%expect
     {|
-    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x01 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdizc pc: 0x1003 inst: STA $%04X
-
+    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x01 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdizc pc: 0x1003 inst: STA $4469
     Mem: 0x4469 : 0x01
     |}]
 ;;
@@ -2163,8 +2200,7 @@ let%expect_test "testing STX IMMEDIATE (0x8E)" =
   dump_last_execution_mem executions [ 0x4469 ];
   [%expect
     {|
-    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: nv-bdizc pc: 0x1003 inst: STX $%04X
-
+    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: nv-bdizc pc: 0x1003 inst: STX $4469
     Mem: 0x4469 : 0x02
     |}]
 ;;
@@ -2181,8 +2217,7 @@ let%expect_test "testing STY IMMEDIATE (0x8C)" =
   dump_last_execution_mem executions [ 0x4469 ];
   [%expect
     {|
-    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: nv-bdizc pc: 0x1003 inst: STY $%04X
-
+    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: nv-bdizc pc: 0x1003 inst: STY $4469
     Mem: 0x4469 : 0x03
     |}]
 ;;
@@ -2203,8 +2238,7 @@ let%expect_test "testing DEC ABSOLUTE dec 1 (0xCE)" =
   dump_last_execution_mem executions [ 0x4469 ];
   [%expect
     {|
-    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: nv-bdizc pc: 0x1003 inst: DEC $%04X
-
+    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: nv-bdizc pc: 0x1003 inst: DEC $4469
     Mem: 0x4469 : 0x01
     |}]
 ;;
@@ -2225,8 +2259,7 @@ let%expect_test "testing DEC ABSOLUTE set Negative Flag (0xCE)" =
   dump_last_execution_mem executions [ 0x4469 ];
   [%expect
     {|
-    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: Nv-bdizc pc: 0x1003 inst: DEC $%04X
-
+    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: Nv-bdizc pc: 0x1003 inst: DEC $4469
     Mem: 0x4469 : 0xFF
     |}]
 ;;
@@ -2244,8 +2277,7 @@ let%expect_test "testing DEC ABSOLUTE Unset negative (0xCE)" =
   dump_last_execution_mem executions [ 0x4469 ];
   [%expect
     {|
-    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: nv-bdizc pc: 0x1003 inst: DEC $%04X
-
+    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: nv-bdizc pc: 0x1003 inst: DEC $4469
     Mem: 0x4469 : 0x7F
     |}]
 ;;
@@ -2266,8 +2298,7 @@ let%expect_test "testing DEC ABSOLUTE dec to zero (0xCE)" =
   dump_last_execution_mem executions [ 0x4469 ];
   [%expect
     {|
-    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: nv-bdiZc pc: 0x1003 inst: DEC $%04X
-
+    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: nv-bdiZc pc: 0x1003 inst: DEC $4469
     Mem: 0x4469 : 0x00
     |}]
 ;;
@@ -2288,8 +2319,7 @@ let%expect_test "testing ASL IMMEDIATE Basic (0x0E)" =
   dump_last_execution_mem executions [ 0x4469 ];
   [%expect
     {|
-    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: nv-bdizc pc: 0x1003 inst: ASL $%04X
-
+    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: nv-bdizc pc: 0x1003 inst: ASL $4469
     Mem: 0x4469 : 0x02
     |}]
 ;;
@@ -2310,8 +2340,7 @@ let%expect_test "testing ASL IMMEDIATE Shift Out (0x0E)" =
   dump_last_execution_mem executions [ 0x4469 ];
   [%expect
     {|
-    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: nv-bdiZC pc: 0x1003 inst: ASL $%04X
-
+    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: nv-bdiZC pc: 0x1003 inst: ASL $4469
     Mem: 0x4469 : 0x00
     |}]
 ;;
@@ -2332,8 +2361,7 @@ let%expect_test "testing ASL IMMEDIATE Negative FLag  (0x0E)" =
   dump_last_execution_mem executions [ 0x4469 ];
   [%expect
     {|
-    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: Nv-bdizc pc: 0x1003 inst: ASL $%04X
-
+    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: Nv-bdizc pc: 0x1003 inst: ASL $4469
     Mem: 0x4469 : 0x80
     |}]
 ;;
@@ -2354,8 +2382,7 @@ let%expect_test "testing INC ABSOLUTE Add 1 (0xEE)" =
   dump_last_execution_mem executions [ 0x4469 ];
   [%expect
     {|
-    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: nv-bdizc pc: 0x1003 inst: INC $%04X
-
+    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: nv-bdizc pc: 0x1003 inst: INC $4469
     Mem: 0x4469 : 0x02
     |}]
 ;;
@@ -2376,8 +2403,7 @@ let%expect_test "testing INC ABSOLUTE Negative Flag (0xEE)" =
   dump_last_execution_mem executions [ 0x4469 ];
   [%expect
     {|
-    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: Nv-bdizc pc: 0x1003 inst: INC $%04X
-
+    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: Nv-bdizc pc: 0x1003 inst: INC $4469
     Mem: 0x4469 : 0x80
     |}]
 ;;
@@ -2398,8 +2424,7 @@ let%expect_test "testing INC ABSOLUTE OverFlow (0xEE)" =
   dump_last_execution_mem executions [ 0x4469 ];
   [%expect
     {|
-    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: nv-bdiZc pc: 0x1003 inst: INC $%04X
-
+    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: nv-bdiZc pc: 0x1003 inst: INC $4469
     Mem: 0x4469 : 0x00
     |}]
 ;;
@@ -2420,8 +2445,7 @@ let%expect_test "testing LSR IMMEDIATE Basic (0x4E)" =
   dump_last_execution_mem executions [ 0x4469 ];
   [%expect
     {|
-    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: nv-bdizc pc: 0x1003 inst: LSR $%04X
-
+    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: nv-bdizc pc: 0x1003 inst: LSR $4469
     Mem: 0x4469 : 0x01
     |}]
 ;;
@@ -2442,8 +2466,7 @@ let%expect_test "testing LSR IMMEDIATE Shift Into (0x4E)" =
   dump_last_execution_mem executions [ 0x4469 ];
   [%expect
     {|
-    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: nv-bdiZC pc: 0x1003 inst: LSR $%04X
-
+    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: nv-bdiZC pc: 0x1003 inst: LSR $4469
     Mem: 0x4469 : 0x00
     |}]
 ;;
@@ -2464,8 +2487,7 @@ let%expect_test "testing LSR IMMEDIATE Hign Bit clear  (0x4E)" =
   dump_last_execution_mem executions [ 0x4469 ];
   [%expect
     {|
-    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: nv-bdizc pc: 0x1003 inst: LSR $%04X
-
+    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: nv-bdizc pc: 0x1003 inst: LSR $4469
     Mem: 0x4469 : 0x40
     |}]
 ;;
@@ -2486,8 +2508,7 @@ let%expect_test "testing ROL ABSOLUTE Carry to bit 0 (0x2E)" =
   dump_last_execution_mem executions [ 0x4469 ];
   [%expect
     {|
-    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: nv-bdizc pc: 0x1003 inst: ROL $%04X
-
+    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: nv-bdizc pc: 0x1003 inst: ROL $4469
     Mem: 0x4469 : 0x01
     |}]
 ;;
@@ -2508,8 +2529,7 @@ let%expect_test "testing ROL ABSOLUTE Bit 7 to Carry (0x2E)" =
   dump_last_execution_mem executions [ 0x4469 ];
   [%expect
     {|
-    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: nv-bdiZC pc: 0x1003 inst: ROL $%04X
-
+    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: nv-bdiZC pc: 0x1003 inst: ROL $4469
     Mem: 0x4469 : 0x00
     |}]
 ;;
@@ -2530,8 +2550,7 @@ let%expect_test "testing ROL ABSOLUTE Negative Flag (0x2E)" =
   dump_last_execution_mem executions [ 0x4469 ];
   [%expect
     {|
-    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: Nv-bdizc pc: 0x1003 inst: ROL $%04X
-
+    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: Nv-bdizc pc: 0x1003 inst: ROL $4469
     Mem: 0x4469 : 0x80
     |}]
 ;;
@@ -2552,8 +2571,7 @@ let%expect_test "testing ROR ABSOLUTE Carry to Bit 7 (0x6E)" =
   dump_last_execution_mem executions [ 0x4469 ];
   [%expect
     {|
-    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: Nv-bdizc pc: 0x1003 inst: ROR $%04X
-
+    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: Nv-bdizc pc: 0x1003 inst: ROR $4469
     Mem: 0x4469 : 0x80
     |}]
 ;;
@@ -2574,8 +2592,7 @@ let%expect_test "testing ROR ABSOLUTE Bit 0 to Carry (0x6E)" =
   dump_last_execution_mem executions [ 0x4469 ];
   [%expect
     {|
-    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: nv-bdiZC pc: 0x1003 inst: ROR $%04X
-
+    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: nv-bdiZC pc: 0x1003 inst: ROR $4469
     Mem: 0x4469 : 0x00
     |}]
 ;;
@@ -2596,8 +2613,7 @@ let%expect_test "testing ROR ABSOLUTE Negative Flag (0x6E)" =
   dump_last_execution_mem executions [ 0x4469 ];
   [%expect
     {|
-    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: Nv-bdizC pc: 0x1003 inst: ROR $%04X
-
+    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: Nv-bdizC pc: 0x1003 inst: ROR $4469
     Mem: 0x4469 : 0xBF
     |}]
 ;;
@@ -2613,7 +2629,7 @@ let%expect_test "testing JMP ABSOLUTE Normal (0x4C)" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x4469 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x4469 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: nv-bdizc pc: 0x4469 inst: JMP $%04X |}]
+    {| ab: 0x4469 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x4469 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: nv-bdizc pc: 0x4469 inst: JMP $4469 |}]
 ;;
 
 let%expect_test "testing ASL ACCUMULATOR Basic (0x0A)" =
@@ -2626,7 +2642,7 @@ let%expect_test "testing ASL ACCUMULATOR Basic (0x0A)" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1001 data: 0xFF a: 0x02 x: 0x02 y: 0x03 sp: 0xFF sr: nv-bdizc pc: 0x1001 inst: ASL A |}]
+    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1001 data: 0xFF a: 0x02 x: 0x02 y: 0x03 sp: 0xFF sr: nv-bdizc pc: 0x1001 inst: ASL A |}]
 ;;
 
 let%expect_test "testing ASL ACCUMULATOR Shift Out (0x0A)" =
@@ -2639,7 +2655,7 @@ let%expect_test "testing ASL ACCUMULATOR Shift Out (0x0A)" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1001 data: 0xFF a: 0x00 x: 0x02 y: 0x03 sp: 0xFF sr: nv-bdiZC pc: 0x1001 inst: ASL A |}]
+    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1001 data: 0xFF a: 0x00 x: 0x02 y: 0x03 sp: 0xFF sr: nv-bdiZC pc: 0x1001 inst: ASL A |}]
 ;;
 
 let%expect_test "testing ASL ACCUMULATOR Negative FLag  (0x0A)" =
@@ -2653,7 +2669,7 @@ let%expect_test "testing ASL ACCUMULATOR Negative FLag  (0x0A)" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1001 data: 0xFF a: 0x80 x: 0x02 y: 0x03 sp: 0xFF sr: Nv-bdizc pc: 0x1001 inst: ASL A |}]
+    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1001 data: 0xFF a: 0x80 x: 0x02 y: 0x03 sp: 0xFF sr: Nv-bdizc pc: 0x1001 inst: ASL A |}]
 ;;
 
 let%expect_test "testing LSR ACCUMULATOR Basic (0x4A)" =
@@ -2667,7 +2683,7 @@ let%expect_test "testing LSR ACCUMULATOR Basic (0x4A)" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1001 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: nv-bdizc pc: 0x1001 inst: LSR A |}]
+    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1001 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: nv-bdizc pc: 0x1001 inst: LSR A |}]
 ;;
 
 let%expect_test "testing LSR ACCUMULATOR Shift Into (0x4A)" =
@@ -2680,7 +2696,7 @@ let%expect_test "testing LSR ACCUMULATOR Shift Into (0x4A)" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1001 data: 0xFF a: 0x00 x: 0x02 y: 0x03 sp: 0xFF sr: nv-bdiZC pc: 0x1001 inst: LSR A |}]
+    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1001 data: 0xFF a: 0x00 x: 0x02 y: 0x03 sp: 0xFF sr: nv-bdiZC pc: 0x1001 inst: LSR A |}]
 ;;
 
 let%expect_test "testing LSR ACCUMULATOR Hign Bit clear  (0x4A)" =
@@ -2693,7 +2709,7 @@ let%expect_test "testing LSR ACCUMULATOR Hign Bit clear  (0x4A)" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1001 data: 0xFF a: 0x40 x: 0x02 y: 0x03 sp: 0xFF sr: nv-bdizc pc: 0x1001 inst: LSR A |}]
+    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1001 data: 0xFF a: 0x40 x: 0x02 y: 0x03 sp: 0xFF sr: nv-bdizc pc: 0x1001 inst: LSR A |}]
 ;;
 
 let%expect_test "testing ROR ACCUMULATOR Carry to Bit 7 (0x6A)" =
@@ -2706,7 +2722,7 @@ let%expect_test "testing ROR ACCUMULATOR Carry to Bit 7 (0x6A)" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1001 data: 0xFF a: 0x80 x: 0x02 y: 0x03 sp: 0xFF sr: Nv-bdizc pc: 0x1001 inst: ROR A |}]
+    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1001 data: 0xFF a: 0x80 x: 0x02 y: 0x03 sp: 0xFF sr: Nv-bdizc pc: 0x1001 inst: ROR A |}]
 ;;
 
 let%expect_test "testing ROR ACCUMULATOR Bit 0 to Carry (0x6A)" =
@@ -2719,7 +2735,7 @@ let%expect_test "testing ROR ACCUMULATOR Bit 0 to Carry (0x6A)" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1001 data: 0xFF a: 0x00 x: 0x02 y: 0x03 sp: 0xFF sr: nv-bdiZC pc: 0x1001 inst: ROR A |}]
+    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1001 data: 0xFF a: 0x00 x: 0x02 y: 0x03 sp: 0xFF sr: nv-bdiZC pc: 0x1001 inst: ROR A |}]
 ;;
 
 let%expect_test "testing ROR ACCUMULATOR Negative Flag (0x6A)" =
@@ -2732,7 +2748,7 @@ let%expect_test "testing ROR ACCUMULATOR Negative Flag (0x6A)" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1001 data: 0xFF a: 0xBF x: 0x02 y: 0x03 sp: 0xFF sr: Nv-bdizC pc: 0x1001 inst: ROR A |}]
+    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1001 data: 0xFF a: 0xBF x: 0x02 y: 0x03 sp: 0xFF sr: Nv-bdizC pc: 0x1001 inst: ROR A |}]
 ;;
 
 let%expect_test "testing ROL ACCUMULATOR Carry to bit 0 (0x2A)" =
@@ -2745,7 +2761,7 @@ let%expect_test "testing ROL ACCUMULATOR Carry to bit 0 (0x2A)" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1001 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: nv-bdizc pc: 0x1001 inst: ROL A |}]
+    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1001 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: nv-bdizc pc: 0x1001 inst: ROL A |}]
 ;;
 
 let%expect_test "testing ROL ACCUMULATOR Bit 7 to Carry (0x2A)" =
@@ -2758,7 +2774,7 @@ let%expect_test "testing ROL ACCUMULATOR Bit 7 to Carry (0x2A)" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1001 data: 0xFF a: 0x00 x: 0x02 y: 0x03 sp: 0xFF sr: nv-bdiZC pc: 0x1001 inst: ROL A |}]
+    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1001 data: 0xFF a: 0x00 x: 0x02 y: 0x03 sp: 0xFF sr: nv-bdiZC pc: 0x1001 inst: ROL A |}]
 ;;
 
 let%expect_test "testing ROL ACCUMULATOR Negative Flag (0x2A)" =
@@ -2771,7 +2787,7 @@ let%expect_test "testing ROL ACCUMULATOR Negative Flag (0x2A)" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1001 data: 0xFF a: 0x80 x: 0x02 y: 0x03 sp: 0xFF sr: Nv-bdizc pc: 0x1001 inst: ROL A |}]
+    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1001 data: 0xFF a: 0x80 x: 0x02 y: 0x03 sp: 0xFF sr: Nv-bdizc pc: 0x1001 inst: ROL A |}]
 ;;
 
 let%expect_test "testing INX IMPLIED Add 1 (0xE8)" =
@@ -2784,7 +2800,7 @@ let%expect_test "testing INX IMPLIED Add 1 (0xE8)" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1001 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: nv-bdizc pc: 0x1001 inst: INX |}]
+    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1001 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: nv-bdizc pc: 0x1001 inst: INX |}]
 ;;
 
 let%expect_test "testing INC IMPLIED Negative Flag (0xE8)" =
@@ -2797,7 +2813,7 @@ let%expect_test "testing INC IMPLIED Negative Flag (0xE8)" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1001 data: 0xFF a: 0x01 x: 0x80 y: 0x03 sp: 0xFF sr: Nv-bdizc pc: 0x1001 inst: INX |}]
+    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1001 data: 0xFF a: 0x01 x: 0x80 y: 0x03 sp: 0xFF sr: Nv-bdizc pc: 0x1001 inst: INX |}]
 ;;
 
 let%expect_test "testing INC IMPLIED OverFlow (0xE8)" =
@@ -2810,7 +2826,7 @@ let%expect_test "testing INC IMPLIED OverFlow (0xE8)" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1001 data: 0xFF a: 0x01 x: 0x00 y: 0x03 sp: 0xFF sr: nv-bdiZc pc: 0x1001 inst: INX |}]
+    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1001 data: 0xFF a: 0x01 x: 0x00 y: 0x03 sp: 0xFF sr: nv-bdiZc pc: 0x1001 inst: INX |}]
 ;;
 
 let%expect_test "testing INY IMPLIED Add 1 (0xC8)" =
@@ -2823,7 +2839,7 @@ let%expect_test "testing INY IMPLIED Add 1 (0xC8)" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1001 data: 0xFF a: 0x01 x: 0x02 y: 0x02 sp: 0xFF sr: nv-bdizc pc: 0x1001 inst: INY |}]
+    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1001 data: 0xFF a: 0x01 x: 0x02 y: 0x02 sp: 0xFF sr: nv-bdizc pc: 0x1001 inst: INY |}]
 ;;
 
 let%expect_test "testing INY IMPLIED Negative Flag (0xC8)" =
@@ -2836,7 +2852,7 @@ let%expect_test "testing INY IMPLIED Negative Flag (0xC8)" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1001 data: 0xFF a: 0x01 x: 0x02 y: 0x80 sp: 0xFF sr: Nv-bdizc pc: 0x1001 inst: INY |}]
+    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1001 data: 0xFF a: 0x01 x: 0x02 y: 0x80 sp: 0xFF sr: Nv-bdizc pc: 0x1001 inst: INY |}]
 ;;
 
 let%expect_test "testing INY IMPLIED OverFlow (0xC8)" =
@@ -2849,7 +2865,7 @@ let%expect_test "testing INY IMPLIED OverFlow (0xC8)" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1001 data: 0xFF a: 0x01 x: 0x02 y: 0x00 sp: 0xFF sr: nv-bdiZc pc: 0x1001 inst: INY |}]
+    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1001 data: 0xFF a: 0x01 x: 0x02 y: 0x00 sp: 0xFF sr: nv-bdiZc pc: 0x1001 inst: INY |}]
 ;;
 
 let%expect_test "testing DEX IMPLIED dec 1 (0xCA)" =
@@ -2862,7 +2878,7 @@ let%expect_test "testing DEX IMPLIED dec 1 (0xCA)" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1001 data: 0xFF a: 0x01 x: 0x01 y: 0x03 sp: 0xFF sr: nv-bdizc pc: 0x1001 inst: DEX |}]
+    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1001 data: 0xFF a: 0x01 x: 0x01 y: 0x03 sp: 0xFF sr: nv-bdizc pc: 0x1001 inst: DEX |}]
 ;;
 
 let%expect_test "testing DEX IMPLIED set Negative Flag (0xCA)" =
@@ -2875,7 +2891,7 @@ let%expect_test "testing DEX IMPLIED set Negative Flag (0xCA)" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1001 data: 0xFF a: 0x01 x: 0xFF y: 0x03 sp: 0xFF sr: Nv-bdizc pc: 0x1001 inst: DEX |}]
+    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1001 data: 0xFF a: 0x01 x: 0xFF y: 0x03 sp: 0xFF sr: Nv-bdizc pc: 0x1001 inst: DEX |}]
 ;;
 
 let%expect_test "testing DEX IMPLIED Unset negative (0xCA)" =
@@ -2888,7 +2904,7 @@ let%expect_test "testing DEX IMPLIED Unset negative (0xCA)" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1001 data: 0xFF a: 0x01 x: 0x7F y: 0x03 sp: 0xFF sr: nv-bdizc pc: 0x1001 inst: DEX |}]
+    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1001 data: 0xFF a: 0x01 x: 0x7F y: 0x03 sp: 0xFF sr: nv-bdizc pc: 0x1001 inst: DEX |}]
 ;;
 
 let%expect_test "testing DEX IMPLIED dec to zero (0xCA)" =
@@ -2901,7 +2917,7 @@ let%expect_test "testing DEX IMPLIED dec to zero (0xCA)" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1001 data: 0xFF a: 0x01 x: 0x00 y: 0x03 sp: 0xFF sr: nv-bdiZc pc: 0x1001 inst: DEX |}]
+    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1001 data: 0xFF a: 0x01 x: 0x00 y: 0x03 sp: 0xFF sr: nv-bdiZc pc: 0x1001 inst: DEX |}]
 ;;
 
 let%expect_test "testing DEY IMPLIED dec 1 (0x88)" =
@@ -2914,7 +2930,7 @@ let%expect_test "testing DEY IMPLIED dec 1 (0x88)" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1001 data: 0xFF a: 0x01 x: 0x02 y: 0x01 sp: 0xFF sr: nv-bdizc pc: 0x1001 inst: DEY |}]
+    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1001 data: 0xFF a: 0x01 x: 0x02 y: 0x01 sp: 0xFF sr: nv-bdizc pc: 0x1001 inst: DEY |}]
 ;;
 
 let%expect_test "testing DEY IMPLIED set Negative Flag (0x88)" =
@@ -2927,7 +2943,7 @@ let%expect_test "testing DEY IMPLIED set Negative Flag (0x88)" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1001 data: 0xFF a: 0x01 x: 0x02 y: 0xFF sp: 0xFF sr: Nv-bdizc pc: 0x1001 inst: DEY |}]
+    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1001 data: 0xFF a: 0x01 x: 0x02 y: 0xFF sp: 0xFF sr: Nv-bdizc pc: 0x1001 inst: DEY |}]
 ;;
 
 let%expect_test "testing DEY IMPLIED Unset negative (0x88)" =
@@ -2940,7 +2956,7 @@ let%expect_test "testing DEY IMPLIED Unset negative (0x88)" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1001 data: 0xFF a: 0x01 x: 0x02 y: 0x7F sp: 0xFF sr: nv-bdizc pc: 0x1001 inst: DEY |}]
+    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1001 data: 0xFF a: 0x01 x: 0x02 y: 0x7F sp: 0xFF sr: nv-bdizc pc: 0x1001 inst: DEY |}]
 ;;
 
 let%expect_test "testing DEY IMPLIED dec to zero (0x88)" =
@@ -2953,7 +2969,7 @@ let%expect_test "testing DEY IMPLIED dec to zero (0x88)" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1001 data: 0xFF a: 0x01 x: 0x02 y: 0x00 sp: 0xFF sr: nv-bdiZc pc: 0x1001 inst: DEY |}]
+    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1001 data: 0xFF a: 0x01 x: 0x02 y: 0x00 sp: 0xFF sr: nv-bdiZc pc: 0x1001 inst: DEY |}]
 ;;
 
 let%expect_test "testing CLC IMPLIED standard (0x18)" =
@@ -2966,7 +2982,7 @@ let%expect_test "testing CLC IMPLIED standard (0x18)" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1001 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: Nv-bdizc pc: 0x1001 inst: CLC |}]
+    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1001 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: Nv-bdizc pc: 0x1001 inst: CLC |}]
 ;;
 
 let%expect_test "testing CLC IMPLIED No-Op (0x18)" =
@@ -2979,7 +2995,7 @@ let%expect_test "testing CLC IMPLIED No-Op (0x18)" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1001 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: Nv-bdizc pc: 0x1001 inst: CLC |}]
+    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1001 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: Nv-bdizc pc: 0x1001 inst: CLC |}]
 ;;
 
 let%expect_test "testing CLD IMPLIED standard (0xD8)" =
@@ -2992,7 +3008,7 @@ let%expect_test "testing CLD IMPLIED standard (0xD8)" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1001 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: Nv-bdizc pc: 0x1001 inst: CLD |}]
+    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1001 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: Nv-bdizc pc: 0x1001 inst: CLD |}]
 ;;
 
 let%expect_test "testing CLD IMPLIED No-Op (0xD8)" =
@@ -3005,7 +3021,7 @@ let%expect_test "testing CLD IMPLIED No-Op (0xD8)" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1001 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: Nv-bdizc pc: 0x1001 inst: CLD |}]
+    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1001 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: Nv-bdizc pc: 0x1001 inst: CLD |}]
 ;;
 
 let%expect_test "testing CLI IMPLIED standard (0x58)" =
@@ -3018,7 +3034,7 @@ let%expect_test "testing CLI IMPLIED standard (0x58)" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1001 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: Nv-bdizc pc: 0x1001 inst: CLI |}]
+    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1001 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: Nv-bdizc pc: 0x1001 inst: CLI |}]
 ;;
 
 let%expect_test "testing CLI IMPLIED No-Op (0x58)" =
@@ -3031,7 +3047,7 @@ let%expect_test "testing CLI IMPLIED No-Op (0x58)" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1001 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: Nv-bdizc pc: 0x1001 inst: CLI |}]
+    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1001 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: Nv-bdizc pc: 0x1001 inst: CLI |}]
 ;;
 
 let%expect_test "testing CLV IMPLIED standard (0xB8)" =
@@ -3044,7 +3060,7 @@ let%expect_test "testing CLV IMPLIED standard (0xB8)" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1001 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: nv-bdIzc pc: 0x1001 inst: CLV |}]
+    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1001 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: nv-bdIzc pc: 0x1001 inst: CLV |}]
 ;;
 
 let%expect_test "testing CLV IMPLIED No-Op (0xB8)" =
@@ -3057,7 +3073,7 @@ let%expect_test "testing CLV IMPLIED No-Op (0xB8)" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1001 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: Nv-bdizc pc: 0x1001 inst: CLV |}]
+    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1001 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: Nv-bdizc pc: 0x1001 inst: CLV |}]
 ;;
 
 let%expect_test "testing SEC IMPLIED standard (0x38)" =
@@ -3070,7 +3086,7 @@ let%expect_test "testing SEC IMPLIED standard (0x38)" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1001 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: Nv-bdizC pc: 0x1001 inst: SEC |}]
+    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1001 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: Nv-bdizC pc: 0x1001 inst: SEC |}]
 ;;
 
 let%expect_test "testing SEC IMPLIED No-Op (0x38)" =
@@ -3083,7 +3099,7 @@ let%expect_test "testing SEC IMPLIED No-Op (0x38)" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1001 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: Nv-bdizC pc: 0x1001 inst: SEC |}]
+    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1001 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: Nv-bdizC pc: 0x1001 inst: SEC |}]
 ;;
 
 let%expect_test "testing SED IMPLIED standard (0xF8)" =
@@ -3096,7 +3112,7 @@ let%expect_test "testing SED IMPLIED standard (0xF8)" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1001 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: Nv-bDizc pc: 0x1001 inst: SED |}]
+    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1001 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: Nv-bDizc pc: 0x1001 inst: SED |}]
 ;;
 
 let%expect_test "testing SED IMPLIED No-Op (0xF8)" =
@@ -3109,7 +3125,7 @@ let%expect_test "testing SED IMPLIED No-Op (0xF8)" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1001 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: Nv-bDizc pc: 0x1001 inst: SED |}]
+    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1001 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: Nv-bDizc pc: 0x1001 inst: SED |}]
 ;;
 
 let%expect_test "testing SEI IMPLIED standard (0x78)" =
@@ -3122,7 +3138,7 @@ let%expect_test "testing SEI IMPLIED standard (0x78)" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1001 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: Nv-bdIzc pc: 0x1001 inst: SEI |}]
+    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1001 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: Nv-bdIzc pc: 0x1001 inst: SEI |}]
 ;;
 
 let%expect_test "testing SEI IMPLIED No-Op (0x78)" =
@@ -3135,7 +3151,7 @@ let%expect_test "testing SEI IMPLIED No-Op (0x78)" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1001 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: Nv-bdIzc pc: 0x1001 inst: SEI |}]
+    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1001 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: Nv-bdIzc pc: 0x1001 inst: SEI |}]
 ;;
 
 let%expect_test "testing TAX IMPLIED Positive (0xAA)" =
@@ -3148,7 +3164,7 @@ let%expect_test "testing TAX IMPLIED Positive (0xAA)" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1001 data: 0xFF a: 0x42 x: 0x42 y: 0x03 sp: 0xFF sr: nv-bdizc pc: 0x1001 inst: TAX |}]
+    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1001 data: 0xFF a: 0x42 x: 0x42 y: 0x03 sp: 0xFF sr: nv-bdizc pc: 0x1001 inst: TAX |}]
 ;;
 
 let%expect_test "testing TAX IMPLIED Negative (0xAA)" =
@@ -3161,7 +3177,7 @@ let%expect_test "testing TAX IMPLIED Negative (0xAA)" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1001 data: 0xFF a: 0x80 x: 0x80 y: 0x03 sp: 0xFF sr: Nv-bdizc pc: 0x1001 inst: TAX |}]
+    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1001 data: 0xFF a: 0x80 x: 0x80 y: 0x03 sp: 0xFF sr: Nv-bdizc pc: 0x1001 inst: TAX |}]
 ;;
 
 let%expect_test "testing TAX IMPLIED Zero flag (0xAA)" =
@@ -3174,7 +3190,7 @@ let%expect_test "testing TAX IMPLIED Zero flag (0xAA)" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1001 data: 0xFF a: 0x00 x: 0x00 y: 0x03 sp: 0xFF sr: nv-bdiZc pc: 0x1001 inst: TAX |}]
+    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1001 data: 0xFF a: 0x00 x: 0x00 y: 0x03 sp: 0xFF sr: nv-bdiZc pc: 0x1001 inst: TAX |}]
 ;;
 
 let%expect_test "testing TXA IMPLIED Positive (0x8A)" =
@@ -3187,7 +3203,7 @@ let%expect_test "testing TXA IMPLIED Positive (0x8A)" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1001 data: 0xFF a: 0x42 x: 0x42 y: 0x03 sp: 0xFF sr: nv-bdizc pc: 0x1001 inst: TXA |}]
+    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1001 data: 0xFF a: 0x42 x: 0x42 y: 0x03 sp: 0xFF sr: nv-bdizc pc: 0x1001 inst: TXA |}]
 ;;
 
 let%expect_test "testing TXA IMPLIED Negative (0x8A)" =
@@ -3200,7 +3216,7 @@ let%expect_test "testing TXA IMPLIED Negative (0x8A)" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1001 data: 0xFF a: 0x80 x: 0x80 y: 0x03 sp: 0xFF sr: Nv-bdizc pc: 0x1001 inst: TXA |}]
+    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1001 data: 0xFF a: 0x80 x: 0x80 y: 0x03 sp: 0xFF sr: Nv-bdizc pc: 0x1001 inst: TXA |}]
 ;;
 
 let%expect_test "testing TXA IMPLIED Zero flag (0x8A)" =
@@ -3213,7 +3229,7 @@ let%expect_test "testing TXA IMPLIED Zero flag (0x8A)" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1001 data: 0xFF a: 0x00 x: 0x00 y: 0x03 sp: 0xFF sr: nv-bdiZc pc: 0x1001 inst: TXA |}]
+    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1001 data: 0xFF a: 0x00 x: 0x00 y: 0x03 sp: 0xFF sr: nv-bdiZc pc: 0x1001 inst: TXA |}]
 ;;
 
 let%expect_test "testing TAY IMPLIED Positive (0xA8)" =
@@ -3226,7 +3242,7 @@ let%expect_test "testing TAY IMPLIED Positive (0xA8)" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1001 data: 0xFF a: 0x42 x: 0x02 y: 0x42 sp: 0xFF sr: nv-bdizc pc: 0x1001 inst: TAY |}]
+    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1001 data: 0xFF a: 0x42 x: 0x02 y: 0x42 sp: 0xFF sr: nv-bdizc pc: 0x1001 inst: TAY |}]
 ;;
 
 let%expect_test "testing TAY IMPLIED Negative (0xA8)" =
@@ -3239,7 +3255,7 @@ let%expect_test "testing TAY IMPLIED Negative (0xA8)" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1001 data: 0xFF a: 0x80 x: 0x02 y: 0x80 sp: 0xFF sr: Nv-bdizc pc: 0x1001 inst: TAY |}]
+    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1001 data: 0xFF a: 0x80 x: 0x02 y: 0x80 sp: 0xFF sr: Nv-bdizc pc: 0x1001 inst: TAY |}]
 ;;
 
 let%expect_test "testing TAY IMPLIED Zero flag (0xA8)" =
@@ -3252,7 +3268,7 @@ let%expect_test "testing TAY IMPLIED Zero flag (0xA8)" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1001 data: 0xFF a: 0x00 x: 0x02 y: 0x00 sp: 0xFF sr: nv-bdiZc pc: 0x1001 inst: TAY |}]
+    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1001 data: 0xFF a: 0x00 x: 0x02 y: 0x00 sp: 0xFF sr: nv-bdiZc pc: 0x1001 inst: TAY |}]
 ;;
 
 let%expect_test "testing TYA IMPLIED Positive (0x98)" =
@@ -3265,7 +3281,7 @@ let%expect_test "testing TYA IMPLIED Positive (0x98)" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1001 data: 0xFF a: 0x42 x: 0x02 y: 0x42 sp: 0xFF sr: nv-bdizc pc: 0x1001 inst: TYA |}]
+    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1001 data: 0xFF a: 0x42 x: 0x02 y: 0x42 sp: 0xFF sr: nv-bdizc pc: 0x1001 inst: TYA |}]
 ;;
 
 let%expect_test "testing TYA IMPLIED Negative (0x98)" =
@@ -3278,7 +3294,7 @@ let%expect_test "testing TYA IMPLIED Negative (0x98)" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1001 data: 0xFF a: 0x80 x: 0x02 y: 0x80 sp: 0xFF sr: Nv-bdizc pc: 0x1001 inst: TYA |}]
+    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1001 data: 0xFF a: 0x80 x: 0x02 y: 0x80 sp: 0xFF sr: Nv-bdizc pc: 0x1001 inst: TYA |}]
 ;;
 
 let%expect_test "testing TYA IMPLIED Zero flag (0x98)" =
@@ -3291,7 +3307,7 @@ let%expect_test "testing TYA IMPLIED Zero flag (0x98)" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1001 data: 0xFF a: 0x00 x: 0x02 y: 0x00 sp: 0xFF sr: nv-bdiZc pc: 0x1001 inst: TYA |}]
+    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1001 data: 0xFF a: 0x00 x: 0x02 y: 0x00 sp: 0xFF sr: nv-bdiZc pc: 0x1001 inst: TYA |}]
 ;;
 
 let%expect_test "testing TXS IMPLIED Positive (0x9A)" =
@@ -3306,7 +3322,7 @@ let%expect_test "testing TXS IMPLIED Positive (0x9A)" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1001 data: 0xFF a: 0x01 x: 0x42 y: 0x03 sp: 0x42 sr: nv-bdizc pc: 0x1001 inst: TXS |}]
+    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1001 data: 0xFF a: 0x01 x: 0x42 y: 0x03 sp: 0x42 sr: nv-bdizc pc: 0x1001 inst: TXS |}]
 ;;
 
 let%expect_test "testing TXS IMPLIED Negative (0x9A)" =
@@ -3321,7 +3337,7 @@ let%expect_test "testing TXS IMPLIED Negative (0x9A)" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1001 data: 0xFF a: 0x01 x: 0x80 y: 0x03 sp: 0x80 sr: Nv-bdizc pc: 0x1001 inst: TXS |}]
+    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1001 data: 0xFF a: 0x01 x: 0x80 y: 0x03 sp: 0x80 sr: nv-bdizc pc: 0x1001 inst: TXS |}]
 ;;
 
 let%expect_test "testing TXS IMPLIED Zero flag (0x9A)" =
@@ -3336,7 +3352,7 @@ let%expect_test "testing TXS IMPLIED Zero flag (0x9A)" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1001 data: 0xFF a: 0x01 x: 0x00 y: 0x03 sp: 0x00 sr: nv-bdiZc pc: 0x1001 inst: TXS |}]
+    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1001 data: 0xFF a: 0x01 x: 0x00 y: 0x03 sp: 0x00 sr: Nv-bdizc pc: 0x1001 inst: TXS |}]
 ;;
 
 let%expect_test "testing TSX IMPLIED Positive (0xBA)" =
@@ -3351,7 +3367,7 @@ let%expect_test "testing TSX IMPLIED Positive (0xBA)" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1001 data: 0xFF a: 0x01 x: 0x42 y: 0x03 sp: 0x42 sr: nv-bdizc pc: 0x1001 inst: TSX |}]
+    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1001 data: 0xFF a: 0x01 x: 0x42 y: 0x03 sp: 0x42 sr: nv-bdizc pc: 0x1001 inst: TSX |}]
 ;;
 
 let%expect_test "testing TSX IMPLIED Negative (0xBA)" =
@@ -3366,7 +3382,7 @@ let%expect_test "testing TSX IMPLIED Negative (0xBA)" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1001 data: 0xFF a: 0x01 x: 0x80 y: 0x03 sp: 0x80 sr: Nv-bdizc pc: 0x1001 inst: TSX |}]
+    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1001 data: 0xFF a: 0x01 x: 0x80 y: 0x03 sp: 0x80 sr: Nv-bdizc pc: 0x1001 inst: TSX |}]
 ;;
 
 let%expect_test "testing TSX IMPLIED Zero flag (0xBA)" =
@@ -3381,7 +3397,7 @@ let%expect_test "testing TSX IMPLIED Zero flag (0xBA)" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1001 data: 0xFF a: 0x01 x: 0x00 y: 0x03 sp: 0x00 sr: nv-bdiZc pc: 0x1001 inst: TSX |}]
+    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1001 data: 0xFF a: 0x01 x: 0x00 y: 0x03 sp: 0x00 sr: nv-bdiZc pc: 0x1001 inst: TSX |}]
 ;;
 
 let%expect_test "testing PHA IMPLIED (0x48)" =
@@ -3398,8 +3414,7 @@ let%expect_test "testing PHA IMPLIED (0x48)" =
   dump_last_execution_mem executions [ 0x1FC; 0x1FD; 0x1FE; 0x1FF ];
   [%expect
     {|
-    ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1001 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1001 inst: PHA
-
+    ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1001 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1001 inst: PHA
     Mem: 0x01FC : 0xFF
     Mem: 0x01FD : 0xFF
     Mem: 0x01FE : 0x01
@@ -3421,11 +3436,10 @@ let%expect_test "testing PHP IMPLIED (0x08)" =
   dump_last_execution_mem executions [ 0x1FC; 0x1FD; 0x1FE; 0x1FF ];
   [%expect
     {|
-    ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1001 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1001 inst: PHP
-
+    ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1001 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1001 inst: PHP
     Mem: 0x01FC : 0xFF
     Mem: 0x01FD : 0xFF
-    Mem: 0x01FE : 0x00
+    Mem: 0x01FE : 0x30
     Mem: 0x01FF : 0xFF
     |}]
 ;;
@@ -3440,13 +3454,13 @@ let%expect_test "testing PLA IMPLIED Positive (0x68)" =
     }
   in
   computer.banks.(0x1FC) <- 0x0C;
-  computer.banks.(0x1FD) <- 0x10;
-  computer.banks.(0x1FE) <- 0x1E;
+  computer.banks.(0x1FD) <- 0x1D;
+  computer.banks.(0x1FE) <- 0x10;
   computer.banks.(0x1FF) <- 0x1F;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1001 data: 0xFF a: 0x10 x: 0x02 y: 0x03 sp: 0xFE sr: nv-bdizc pc: 0x1001 inst: PLA |}]
+    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1001 data: 0xFF a: 0x10 x: 0x02 y: 0x03 sp: 0xFE sr: nv-bdizc pc: 0x1001 inst: PLA |}]
 ;;
 
 let%expect_test "testing PLA IMPLIED Negative (0x68)" =
@@ -3458,14 +3472,14 @@ let%expect_test "testing PLA IMPLIED Negative (0x68)" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x1FC) <- 0x0C;
-  computer.banks.(0x1FD) <- 0x80;
-  computer.banks.(0x1FE) <- 0x1E;
+  computer.banks.(0x1FC) <- 0x1C;
+  computer.banks.(0x1FD) <- 0x1D;
+  computer.banks.(0x1FE) <- 0x80;
   computer.banks.(0x1FF) <- 0x1F;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1001 data: 0xFF a: 0x80 x: 0x02 y: 0x03 sp: 0xFE sr: Nv-bdizc pc: 0x1001 inst: PLA |}]
+    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1001 data: 0xFF a: 0x80 x: 0x02 y: 0x03 sp: 0xFE sr: Nv-bdizc pc: 0x1001 inst: PLA |}]
 ;;
 
 let%expect_test "testing PLA IMPLIED Zero (0x68)" =
@@ -3477,14 +3491,14 @@ let%expect_test "testing PLA IMPLIED Zero (0x68)" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x1FC) <- 0x0C;
-  computer.banks.(0x1FD) <- 0x00;
-  computer.banks.(0x1FE) <- 0x1E;
+  computer.banks.(0x1FC) <- 0x1C;
+  computer.banks.(0x1FD) <- 0x1D;
+  computer.banks.(0x1FE) <- 0x00;
   computer.banks.(0x1FF) <- 0x1F;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1001 data: 0xFF a: 0x00 x: 0x02 y: 0x03 sp: 0xFE sr: nv-bdiZc pc: 0x1001 inst: PLA |}]
+    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1001 data: 0xFF a: 0x00 x: 0x02 y: 0x03 sp: 0xFE sr: nv-bdiZc pc: 0x1001 inst: PLA |}]
 ;;
 
 let%expect_test "testing PLP IMPLIED (0x28)" =
@@ -3496,33 +3510,14 @@ let%expect_test "testing PLP IMPLIED (0x28)" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x1FC) <- 0x0C;
-  computer.banks.(0x1FD) <- 0b1100_0011;
-  computer.banks.(0x1FE) <- 0x1E;
-  computer.banks.(0x1FF) <- 0x1F;
-  let executions = execute_cycles cycles computer in
-  dump_last_execution executions;
-  [%expect
-    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1001 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFE sr: NV-bdiZC pc: 0x1001 inst: PLP |}]
-;;
-
-let%expect_test "testing PLP IMPLIED (0x28) should clear break flag" =
-  let cycles = 4 in
-  let pgm = [ 0x28 ] in
-  let computer = init_test_computer 0x1000 pgm in
-  let computer =
-    { computer with
-      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
-    }
-  in
   computer.banks.(0x1FC) <- 0x1C;
-  computer.banks.(0x1FD) <- 0b1101_0011;
-  computer.banks.(0x1FE) <- 0x1E;
+  computer.banks.(0x1FD) <- 0x1D;
+  computer.banks.(0x1FE) <- 0b1100_0011;
   computer.banks.(0x1FF) <- 0x1F;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1001 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFE sr: NV-bdiZC pc: 0x1001 inst: PLP |}]
+    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1001 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFE sr: NV-bdiZC pc: 0x1001 inst: PLP |}]
 ;;
 
 let%expect_test "testing LDA ZEROPAGEX (0xB5) non-zero positive" =
@@ -3538,7 +3533,7 @@ let%expect_test "testing LDA ZEROPAGEX (0xB5) non-zero positive" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x04 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: LDA $%02X,X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x04 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: LDA $44,X |}]
 ;;
 
 let%expect_test "testing LDA ZEROPAGEX (0xB5) non-zero negative" =
@@ -3554,7 +3549,7 @@ let%expect_test "testing LDA ZEROPAGEX (0xB5) non-zero negative" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x84 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1002 inst: LDA $%02X,X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x84 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1002 inst: LDA $44,X |}]
 ;;
 
 let%expect_test "testing LDA ZEROPAGEX (0xB5) zero " =
@@ -3570,7 +3565,7 @@ let%expect_test "testing LDA ZEROPAGEX (0xB5) zero " =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x00 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZc pc: 0x1002 inst: LDA $%02X,X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x00 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZc pc: 0x1002 inst: LDA $44,X |}]
 ;;
 
 let%expect_test "testing LDA ZEROPAGEX (0xB5) wrap around" =
@@ -3586,7 +3581,7 @@ let%expect_test "testing LDA ZEROPAGEX (0xB5) wrap around" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x04 x: 0xFF y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: LDA $%02X,X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x04 x: 0xFF y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: LDA $44,X |}]
 ;;
 
 let%expect_test "testing LDY ZEROPAGEX (0xB4) non-zero positive" =
@@ -3602,7 +3597,7 @@ let%expect_test "testing LDY ZEROPAGEX (0xB4) non-zero positive" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x04 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: LDY $%02X,X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x04 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: LDY $44,X |}]
 ;;
 
 let%expect_test "testing LDY ZEROPAGEX (0xB4) non-zero negative" =
@@ -3618,7 +3613,7 @@ let%expect_test "testing LDY ZEROPAGEX (0xB4) non-zero negative" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x84 sp: 0xFD sr: Nv-bdizc pc: 0x1002 inst: LDY $%02X,X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x84 sp: 0xFD sr: Nv-bdizc pc: 0x1002 inst: LDY $44,X |}]
 ;;
 
 let%expect_test "testing LDY ZEROPAGEX (0xB4) zero " =
@@ -3634,7 +3629,7 @@ let%expect_test "testing LDY ZEROPAGEX (0xB4) zero " =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x00 sp: 0xFD sr: nv-bdiZc pc: 0x1002 inst: LDY $%02X,X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x00 sp: 0xFD sr: nv-bdiZc pc: 0x1002 inst: LDY $44,X |}]
 ;;
 
 let%expect_test "testing LDY ZEROPAGEX (0xB4) wrap around" =
@@ -3650,7 +3645,7 @@ let%expect_test "testing LDY ZEROPAGEX (0xB4) wrap around" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0xFF y: 0x04 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: LDY $%02X,X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0xFF y: 0x04 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: LDY $44,X |}]
 ;;
 
 let%expect_test "testing EOR ZEROPAGEX (0x55) non-zero positive" =
@@ -3666,7 +3661,7 @@ let%expect_test "testing EOR ZEROPAGEX (0x55) non-zero positive" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x05 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: EOR $%02X,X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x05 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: EOR $44,X |}]
 ;;
 
 let%expect_test "testing EOR ZEROPAGEX (0x55) non-zero negative" =
@@ -3682,7 +3677,7 @@ let%expect_test "testing EOR ZEROPAGEX (0x55) non-zero negative" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x85 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1002 inst: EOR $%02X,X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x85 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1002 inst: EOR $44,X |}]
 ;;
 
 let%expect_test "testing EOR ZEROPAGEX (0x55) zero " =
@@ -3698,7 +3693,7 @@ let%expect_test "testing EOR ZEROPAGEX (0x55) zero " =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x00 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZc pc: 0x1002 inst: EOR $%02X,X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x00 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZc pc: 0x1002 inst: EOR $44,X |}]
 ;;
 
 let%expect_test "testing EOR ZEROPAGEX (0x55) wrap around" =
@@ -3714,7 +3709,7 @@ let%expect_test "testing EOR ZEROPAGEX (0x55) wrap around" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x05 x: 0xFF y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: EOR $%02X,X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x05 x: 0xFF y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: EOR $44,X |}]
 ;;
 
 let%expect_test "testing AND ZEROPAGEX (0x35) non-zero positive" =
@@ -3730,7 +3725,7 @@ let%expect_test "testing AND ZEROPAGEX (0x35) non-zero positive" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: AND $%02X,X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: AND $44,X |}]
 ;;
 
 let%expect_test "testing AND ZEROPAGEX (0x35) non-zero negative" =
@@ -3746,7 +3741,7 @@ let%expect_test "testing AND ZEROPAGEX (0x35) non-zero negative" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x80 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1002 inst: AND $%02X,X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x80 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1002 inst: AND $44,X |}]
 ;;
 
 let%expect_test "testing AND ZEROPAGEX (0x35) zero " =
@@ -3762,7 +3757,7 @@ let%expect_test "testing AND ZEROPAGEX (0x35) zero " =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x00 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZc pc: 0x1002 inst: AND $%02X,X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x00 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZc pc: 0x1002 inst: AND $44,X |}]
 ;;
 
 let%expect_test "testing AND ZEROPAGEX (0x35) wrap around" =
@@ -3778,7 +3773,7 @@ let%expect_test "testing AND ZEROPAGEX (0x35) wrap around" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0xFF y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: AND $%02X,X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0xFF y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: AND $44,X |}]
 ;;
 
 let%expect_test "testing ORA ZEROPAGEX (0x15) non-zero positive" =
@@ -3794,7 +3789,7 @@ let%expect_test "testing ORA ZEROPAGEX (0x15) non-zero positive" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x05 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: ORA $%02X,X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x05 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: ORA $44,X |}]
 ;;
 
 let%expect_test "testing ORA ZEROPAGEX (0x15) non-zero negative" =
@@ -3810,7 +3805,7 @@ let%expect_test "testing ORA ZEROPAGEX (0x15) non-zero negative" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x84 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1002 inst: ORA $%02X,X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x84 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1002 inst: ORA $44,X |}]
 ;;
 
 let%expect_test "testing ORA ZEROPAGEX (0x15) zero " =
@@ -3826,7 +3821,7 @@ let%expect_test "testing ORA ZEROPAGEX (0x15) zero " =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x00 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZc pc: 0x1002 inst: ORA $%02X,X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x00 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZc pc: 0x1002 inst: ORA $44,X |}]
 ;;
 
 let%expect_test "testing ORA ZEROPAGEX (0x15) wrap around" =
@@ -3842,7 +3837,7 @@ let%expect_test "testing ORA ZEROPAGEX (0x15) wrap around" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x05 x: 0xFF y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: ORA $%02X,X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x05 x: 0xFF y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: ORA $44,X |}]
 ;;
 
 let%expect_test "testing ADC ZEROPAGEX (0x75) non-zero positive" =
@@ -3858,7 +3853,7 @@ let%expect_test "testing ADC ZEROPAGEX (0x75) non-zero positive" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x06 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: ADC $%02X,X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x06 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: ADC $44,X |}]
 ;;
 
 let%expect_test "testing ADC ZEROPAGEX (0x75) Incoming carry" =
@@ -3874,7 +3869,7 @@ let%expect_test "testing ADC ZEROPAGEX (0x75) Incoming carry" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x07 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: ADC $%02X,X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x07 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: ADC $44,X |}]
 ;;
 
 let%expect_test "testing ADC ZEROPAGEX (0x75) Genrating Carry " =
@@ -3890,7 +3885,7 @@ let%expect_test "testing ADC ZEROPAGEX (0x75) Genrating Carry " =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x00 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZC pc: 0x1002 inst: ADC $%02X,X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x00 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZC pc: 0x1002 inst: ADC $44,X |}]
 ;;
 
 let%expect_test "testing ADC ZEROPAGEX (0x75) Pos+Pos=Neg" =
@@ -3906,7 +3901,7 @@ let%expect_test "testing ADC ZEROPAGEX (0x75) Pos+Pos=Neg" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x80 x: 0x02 y: 0x03 sp: 0xFD sr: NV-bdizc pc: 0x1002 inst: ADC $%02X,X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x80 x: 0x02 y: 0x03 sp: 0xFD sr: NV-bdizc pc: 0x1002 inst: ADC $44,X |}]
 ;;
 
 let%expect_test "testing ADC ZEROPAGEX (0x75) Pos+Neg" =
@@ -3922,7 +3917,7 @@ let%expect_test "testing ADC ZEROPAGEX (0x75) Pos+Neg" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0xFF x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1002 inst: ADC $%02X,X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0xFF x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1002 inst: ADC $44,X |}]
 ;;
 
 let%expect_test "testing ADC ZEROPAGEX (0x75) Neg+Neg=Pos" =
@@ -3938,7 +3933,7 @@ let%expect_test "testing ADC ZEROPAGEX (0x75) Neg+Neg=Pos" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x7F x: 0x02 y: 0x03 sp: 0xFD sr: nV-bdizC pc: 0x1002 inst: ADC $%02X,X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x7F x: 0x02 y: 0x03 sp: 0xFD sr: nV-bdizC pc: 0x1002 inst: ADC $44,X |}]
 ;;
 
 let%expect_test "testing ADC ZEROPAGEX (0x75) wrap around" =
@@ -3954,7 +3949,7 @@ let%expect_test "testing ADC ZEROPAGEX (0x75) wrap around" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x06 x: 0xFF y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: ADC $%02X,X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x06 x: 0xFF y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: ADC $44,X |}]
 ;;
 
 let%expect_test "testing STA ZEROPAGEX (0x95)" =
@@ -3974,8 +3969,7 @@ let%expect_test "testing STA ZEROPAGEX (0x95)" =
   dump_last_execution_mem executions [ 0x46 ];
   [%expect
     {|
-    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: STA $%02X,X
-
+    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: STA $44,X
     Mem: 0x0046 : 0x01
     |}]
 ;;
@@ -3997,8 +3991,7 @@ let%expect_test "testing STA ZEROPAGEX wrap around (0x95)" =
   dump_last_execution_mem executions [ 0x43 ];
   [%expect
     {|
-    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0xFF y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: STA $%02X,X
-
+    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0xFF y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: STA $44,X
     Mem: 0x0043 : 0x01
     |}]
 ;;
@@ -4020,8 +4013,7 @@ let%expect_test "testing STY ZEROPAGEX (0x94)" =
   dump_last_execution_mem executions [ 0x46 ];
   [%expect
     {|
-    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: STY $%02X,X
-
+    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: STY $44,X
     Mem: 0x0046 : 0x03
     |}]
 ;;
@@ -4043,8 +4035,7 @@ let%expect_test "testing STY ZEROPAGEX wrap around (0x94)" =
   dump_last_execution_mem executions [ 0x43 ];
   [%expect
     {|
-    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0xFF y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: STY $%02X,X
-
+    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0xFF y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: STY $44,X
     Mem: 0x0043 : 0x03
     |}]
 ;;
@@ -4064,8 +4055,7 @@ let%expect_test "testing ASL ZEROPAGEX (0x16) Basic" =
   dump_last_execution_mem executions [ 0x46 ];
   [%expect
     {|
-    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: ASL $%02X,X
-
+    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: ASL $44,X
     Mem: 0x0046 : 0x04
     |}]
 ;;
@@ -4085,8 +4075,7 @@ let%expect_test "testing ASL ZEROPAGEX (0x16) Shift out" =
   dump_last_execution_mem executions [ 0x46 ];
   [%expect
     {|
-    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZC pc: 0x1002 inst: ASL $%02X,X
-
+    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZC pc: 0x1002 inst: ASL $44,X
     Mem: 0x0046 : 0x00
     |}]
 ;;
@@ -4106,8 +4095,7 @@ let%expect_test "testing ASL ZEROPAGEX (0x16) Negative Flag" =
   dump_last_execution_mem executions [ 0x46 ];
   [%expect
     {|
-    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1002 inst: ASL $%02X,X
-
+    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1002 inst: ASL $44,X
     Mem: 0x0046 : 0x80
     |}]
 ;;
@@ -4127,8 +4115,7 @@ let%expect_test "testing ASL ZEROPAGEX (0x16) Wrap around" =
   dump_last_execution_mem executions [ 0x43 ];
   [%expect
     {|
-    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0xFF y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: ASL $%02X,X
-
+    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0xFF y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: ASL $44,X
     Mem: 0x0043 : 0x04
     |}]
 ;;
@@ -4148,8 +4135,7 @@ let%expect_test "testing LSR ZEROPAGEX (0x56) Basic" =
   dump_last_execution_mem executions [ 0x46 ];
   [%expect
     {|
-    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: LSR $%02X,X
-
+    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: LSR $44,X
     Mem: 0x0046 : 0x01
     |}]
 ;;
@@ -4169,8 +4155,7 @@ let%expect_test "testing LSR ZEROPAGEX (0x56) Shift out" =
   dump_last_execution_mem executions [ 0x46 ];
   [%expect
     {|
-    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZC pc: 0x1002 inst: LSR $%02X,X
-
+    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZC pc: 0x1002 inst: LSR $44,X
     Mem: 0x0046 : 0x00
     |}]
 ;;
@@ -4190,8 +4175,7 @@ let%expect_test "testing LSR ZEROPAGEX (0x56) High bit clear" =
   dump_last_execution_mem executions [ 0x46 ];
   [%expect
     {|
-    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: LSR $%02X,X
-
+    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: LSR $44,X
     Mem: 0x0046 : 0x40
     |}]
 ;;
@@ -4211,8 +4195,7 @@ let%expect_test "testing LSR ZEROPAGEX (0x56) Wrap around" =
   dump_last_execution_mem executions [ 0x43 ];
   [%expect
     {|
-    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0xFF y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: LSR $%02X,X
-
+    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0xFF y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: LSR $44,X
     Mem: 0x0043 : 0x01
     |}]
 ;;
@@ -4232,8 +4215,7 @@ let%expect_test "testing ROL ZEROPAGEX (0x36) Carry to bit 0" =
   dump_last_execution_mem executions [ 0x46 ];
   [%expect
     {|
-    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: ROL $%02X,X
-
+    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: ROL $44,X
     Mem: 0x0046 : 0x01
     |}]
 ;;
@@ -4253,8 +4235,7 @@ let%expect_test "testing ROL ZEROPAGEX (0x36) bit 7 to carry" =
   dump_last_execution_mem executions [ 0x46 ];
   [%expect
     {|
-    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZC pc: 0x1002 inst: ROL $%02X,X
-
+    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZC pc: 0x1002 inst: ROL $44,X
     Mem: 0x0046 : 0x00
     |}]
 ;;
@@ -4274,8 +4255,7 @@ let%expect_test "testing ROL ZEROPAGEX (0x36) Negative Flag" =
   dump_last_execution_mem executions [ 0x46 ];
   [%expect
     {|
-    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1002 inst: ROL $%02X,X
-
+    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1002 inst: ROL $44,X
     Mem: 0x0046 : 0x80
     |}]
 ;;
@@ -4295,8 +4275,7 @@ let%expect_test "testing ROL ZEROPAGEX (0x36) Wrap Around" =
   dump_last_execution_mem executions [ 0x43 ];
   [%expect
     {|
-    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0xFF y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: ROL $%02X,X
-
+    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0xFF y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: ROL $44,X
     Mem: 0x0043 : 0x01
     |}]
 ;;
@@ -4316,8 +4295,7 @@ let%expect_test "testing ROR ZEROPAGEX (0x76) carry to bit 7" =
   dump_last_execution_mem executions [ 0x46 ];
   [%expect
     {|
-    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1002 inst: ROR $%02X,X
-
+    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1002 inst: ROR $44,X
     Mem: 0x0046 : 0x80
     |}]
 ;;
@@ -4337,8 +4315,7 @@ let%expect_test "testing ROR ZEROPAGEX (0x76) bit 0 to carry" =
   dump_last_execution_mem executions [ 0x46 ];
   [%expect
     {|
-    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZC pc: 0x1002 inst: ROR $%02X,X
-
+    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZC pc: 0x1002 inst: ROR $44,X
     Mem: 0x0046 : 0x00
     |}]
 ;;
@@ -4358,8 +4335,7 @@ let%expect_test "testing ROR ZEROPAGEX (0x76) Negative Flag" =
   dump_last_execution_mem executions [ 0x46 ];
   [%expect
     {|
-    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizC pc: 0x1002 inst: ROR $%02X,X
-
+    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizC pc: 0x1002 inst: ROR $44,X
     Mem: 0x0046 : 0xBF
     |}]
 ;;
@@ -4379,8 +4355,7 @@ let%expect_test "testing ROR ZEROPAGEX (0x76) Wrap Around" =
   dump_last_execution_mem executions [ 0x43 ];
   [%expect
     {|
-    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0xFF y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1002 inst: ROR $%02X,X
-
+    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0xFF y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1002 inst: ROR $44,X
     Mem: 0x0043 : 0x80
     |}]
 ;;
@@ -4391,14 +4366,14 @@ let%expect_test "testing CMP ZEROPAGEX (0xD5) Equality " =
   let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
-      cpu = { computer.cpu with a = 0x42; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
+      cpu = { computer.cpu with a = 0x42; x = 0x02; y = 0x03; sp = 0xFD; sr = 0xC0 }
     }
   in
   computer.banks.(0x46) <- 0x42;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x42 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZC pc: 0x1002 inst: CMP $%02X,X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x42 x: 0x02 y: 0x03 sp: 0xFD sr: nV-bdiZC pc: 0x1002 inst: CMP $44,X |}]
 ;;
 
 let%expect_test "testing CMP ZEROPAGEX (0xD5) Greater than" =
@@ -4414,7 +4389,7 @@ let%expect_test "testing CMP ZEROPAGEX (0xD5) Greater than" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0xFF x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizC pc: 0x1002 inst: CMP $%02X,X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0xFF x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizC pc: 0x1002 inst: CMP $44,X |}]
 ;;
 
 let%expect_test "testing CMP ZEROPAGEX (0xD5) Less than" =
@@ -4430,7 +4405,7 @@ let%expect_test "testing CMP ZEROPAGEX (0xD5) Less than" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x02 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1002 inst: CMP $%02X,X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x02 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1002 inst: CMP $44,X |}]
 ;;
 
 let%expect_test "testing CMP ZEROPAGEX (0xD5) wrap around" =
@@ -4446,7 +4421,7 @@ let%expect_test "testing CMP ZEROPAGEX (0xD5) wrap around" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x42 x: 0xFF y: 0x03 sp: 0xFD sr: nv-bdiZC pc: 0x1002 inst: CMP $%02X,X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x42 x: 0xFF y: 0x03 sp: 0xFD sr: nv-bdiZC pc: 0x1002 inst: CMP $44,X |}]
 ;;
 
 let%expect_test "testing DEC ZEROPAGEX (0xD6) Dec 1" =
@@ -4464,8 +4439,7 @@ let%expect_test "testing DEC ZEROPAGEX (0xD6) Dec 1" =
   dump_last_execution_mem executions [ 0x46 ];
   [%expect
     {|
-    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: DEC $%02X,X
-
+    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: DEC $44,X
     Mem: 0x0046 : 0x01
     |}]
 ;;
@@ -4485,8 +4459,7 @@ let%expect_test "testing DEC ZEROPAGEX (0xD6) Set negative flag" =
   dump_last_execution_mem executions [ 0x46 ];
   [%expect
     {|
-    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1002 inst: DEC $%02X,X
-
+    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1002 inst: DEC $44,X
     Mem: 0x0046 : 0xFF
     |}]
 ;;
@@ -4506,8 +4479,7 @@ let%expect_test "testing DEC ZEROPAGEX (0xD6) Unset negative flag" =
   dump_last_execution_mem executions [ 0x46 ];
   [%expect
     {|
-    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: DEC $%02X,X
-
+    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: DEC $44,X
     Mem: 0x0046 : 0x7F
     |}]
 ;;
@@ -4527,8 +4499,7 @@ let%expect_test "testing DEC ZEROPAGEX (0xD6) Dec to zero" =
   dump_last_execution_mem executions [ 0x46 ];
   [%expect
     {|
-    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZc pc: 0x1002 inst: DEC $%02X,X
-
+    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZc pc: 0x1002 inst: DEC $44,X
     Mem: 0x0046 : 0x00
     |}]
 ;;
@@ -4548,8 +4519,7 @@ let%expect_test "testing DEC ZEROPAGEX (0xD6) Wrap around" =
   dump_last_execution_mem executions [ 0x43 ];
   [%expect
     {|
-    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0xFF y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: DEC $%02X,X
-
+    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0xFF y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: DEC $44,X
     Mem: 0x0043 : 0x01
     |}]
 ;;
@@ -4569,8 +4539,7 @@ let%expect_test "testing INC ZEROPAGEX (0xF6) Inc 1" =
   dump_last_execution_mem executions [ 0x46 ];
   [%expect
     {|
-    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: INC $%02X,X
-
+    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: INC $44,X
     Mem: 0x0046 : 0x03
     |}]
 ;;
@@ -4590,8 +4559,7 @@ let%expect_test "testing INC ZEROPAGEX (0xF6) Set negative flag" =
   dump_last_execution_mem executions [ 0x46 ];
   [%expect
     {|
-    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1002 inst: INC $%02X,X
-
+    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1002 inst: INC $44,X
     Mem: 0x0046 : 0x80
     |}]
 ;;
@@ -4611,8 +4579,7 @@ let%expect_test "testing INC ZEROPAGEX (0xF6) Overflow" =
   dump_last_execution_mem executions [ 0x46 ];
   [%expect
     {|
-    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZc pc: 0x1002 inst: INC $%02X,X
-
+    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZc pc: 0x1002 inst: INC $44,X
     Mem: 0x0046 : 0x00
     |}]
 ;;
@@ -4632,8 +4599,7 @@ let%expect_test "testing INC ZEROPAGEX (0xF6) Wrap around" =
   dump_last_execution_mem executions [ 0x43 ];
   [%expect
     {|
-    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0xFF y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: INC $%02X,X
-
+    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0xFF y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: INC $44,X
     Mem: 0x0043 : 0x03
     |}]
 ;;
@@ -4651,7 +4617,7 @@ let%expect_test "testing LDX ZEROPAGEY (0xB6) non-zero positive" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x04 y: 0x02 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: LDX $%02X,Y |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x04 y: 0x02 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: LDX $44,Y |}]
 ;;
 
 let%expect_test "testing LDX ZEROPAGEY (0xB6) non-zero negative" =
@@ -4667,7 +4633,7 @@ let%expect_test "testing LDX ZEROPAGEY (0xB6) non-zero negative" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x84 y: 0x02 sp: 0xFD sr: Nv-bdizc pc: 0x1002 inst: LDX $%02X,Y |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x84 y: 0x02 sp: 0xFD sr: Nv-bdizc pc: 0x1002 inst: LDX $44,Y |}]
 ;;
 
 let%expect_test "testing LDX ZEROPAGEY (0xB6) zero " =
@@ -4683,7 +4649,7 @@ let%expect_test "testing LDX ZEROPAGEY (0xB6) zero " =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x00 y: 0x02 sp: 0xFD sr: nv-bdiZc pc: 0x1002 inst: LDX $%02X,Y |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x00 y: 0x02 sp: 0xFD sr: nv-bdiZc pc: 0x1002 inst: LDX $44,Y |}]
 ;;
 
 let%expect_test "testing LDX ZEROPAGEY (0xB6) wrap around" =
@@ -4705,7 +4671,51 @@ let%expect_test "testing LDX ZEROPAGEY (0xB6) wrap around" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x04 y: 0xFF sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: LDX $%02X,Y |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x04 y: 0xFF sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: LDX $44,Y |}]
+;;
+
+let%expect_test "testing STX ZEROPAGEY (0x96)" =
+  (* 2 cycles , 1 byte *)
+  let cycles = 4 in
+  (* LDA $44 *)
+  let pgm = [ 0x96; 0x44 ] in
+  let computer = init_test_computer 0x1000 pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
+    }
+  in
+  computer.banks.(0x47) <- 0xEA;
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  dump_last_execution_mem executions [ 0x47 ];
+  [%expect
+    {|
+    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: STX $44,Y
+    Mem: 0x0047 : 0x02
+    |}]
+;;
+
+let%expect_test "testing STX ZEROPAGEY wrap around (0x96)" =
+  (* 2 cycles , 1 byte *)
+  let cycles = 4 in
+  (* LDA $44 *)
+  let pgm = [ 0x96; 0x44 ] in
+  let computer = init_test_computer 0x1000 pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0xFF; sp = 0xFD; sr = 0x00 }
+    }
+  in
+  computer.banks.(0x43) <- 0xEA;
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  dump_last_execution_mem executions [ 0x43 ];
+  [%expect
+    {|
+    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0xFF sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: STX $44,Y
+    Mem: 0x0043 : 0x02
+    |}]
 ;;
 
 let%expect_test "testing LDA ABSOLUTEX (0xBD) non-zero positive" =
@@ -4721,7 +4731,7 @@ let%expect_test "testing LDA ABSOLUTEX (0xBD) non-zero positive" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x04 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: LDA $%04X,X |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x04 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: LDA $6944,X |}]
 ;;
 
 let%expect_test "testing LDA ABSOLUTEX (0xBD) non-zero negative" =
@@ -4737,7 +4747,7 @@ let%expect_test "testing LDA ABSOLUTEX (0xBD) non-zero negative" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x84 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1003 inst: LDA $%04X,X |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x84 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1003 inst: LDA $6944,X |}]
 ;;
 
 let%expect_test "testing LDA ABSOLUTEX (0xBD) zero" =
@@ -4753,7 +4763,7 @@ let%expect_test "testing LDA ABSOLUTEX (0xBD) zero" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x00 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZc pc: 0x1003 inst: LDA $%04X,X |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x00 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZc pc: 0x1003 inst: LDA $6944,X |}]
 ;;
 
 let%expect_test "testing LDA ABSOLUTEX (0xBD) Page Cross" =
@@ -4769,7 +4779,7 @@ let%expect_test "testing LDA ABSOLUTEX (0xBD) Page Cross" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x04 x: 0xFF y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: LDA $%04X,X |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x04 x: 0xFF y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: LDA $6944,X |}]
 ;;
 
 let%expect_test "testing LDY ABSOLUTEX (0xBC) non-zero positive" =
@@ -4785,7 +4795,7 @@ let%expect_test "testing LDY ABSOLUTEX (0xBC) non-zero positive" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x04 sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: LDY $%04X,X |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x04 sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: LDY $6944,X |}]
 ;;
 
 let%expect_test "testing LDY ABSOLUTEX (0xBC) non-zero negative" =
@@ -4801,7 +4811,7 @@ let%expect_test "testing LDY ABSOLUTEX (0xBC) non-zero negative" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x84 sp: 0xFD sr: Nv-bdizc pc: 0x1003 inst: LDY $%04X,X |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x84 sp: 0xFD sr: Nv-bdizc pc: 0x1003 inst: LDY $6944,X |}]
 ;;
 
 let%expect_test "testing LDY ZEROPAGEX (0xBC) zero " =
@@ -4817,7 +4827,7 @@ let%expect_test "testing LDY ZEROPAGEX (0xBC) zero " =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x00 sp: 0xFD sr: nv-bdiZc pc: 0x1003 inst: LDY $%04X,X |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x00 sp: 0xFD sr: nv-bdiZc pc: 0x1003 inst: LDY $6944,X |}]
 ;;
 
 let%expect_test "testing LDY ABSOLUTE (0xBC) Page Cross" =
@@ -4833,7 +4843,7 @@ let%expect_test "testing LDY ABSOLUTE (0xBC) Page Cross" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x01 x: 0xFF y: 0x04 sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: LDY $%04X,X |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x01 x: 0xFF y: 0x04 sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: LDY $6944,X |}]
 ;;
 
 let%expect_test "testing EOR ABSOLUTEX (0x5D) non-zero positive" =
@@ -4849,7 +4859,7 @@ let%expect_test "testing EOR ABSOLUTEX (0x5D) non-zero positive" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x05 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: EOR $%04X,X |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x05 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: EOR $6944,X |}]
 ;;
 
 let%expect_test "testing EOR ABSOLUTEX (0x5D) non-zero negative" =
@@ -4865,7 +4875,7 @@ let%expect_test "testing EOR ABSOLUTEX (0x5D) non-zero negative" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x85 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1003 inst: EOR $%04X,X |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x85 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1003 inst: EOR $6944,X |}]
 ;;
 
 let%expect_test "testing EOR ABSOLUTEX (0x5D) zero " =
@@ -4881,7 +4891,7 @@ let%expect_test "testing EOR ABSOLUTEX (0x5D) zero " =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x00 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZc pc: 0x1003 inst: EOR $%04X,X |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x00 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZc pc: 0x1003 inst: EOR $6944,X |}]
 ;;
 
 let%expect_test "testing EOR ABSOLUTEX (0x5D) wrap around" =
@@ -4897,7 +4907,7 @@ let%expect_test "testing EOR ABSOLUTEX (0x5D) wrap around" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x05 x: 0xFF y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: EOR $%04X,X |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x05 x: 0xFF y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: EOR $6944,X |}]
 ;;
 
 let%expect_test "testing AND ABSOLUTEX (0x3D) non-zero positive" =
@@ -4913,7 +4923,7 @@ let%expect_test "testing AND ABSOLUTEX (0x3D) non-zero positive" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: AND $%04X,X |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: AND $6944,X |}]
 ;;
 
 let%expect_test "testing AND ABSOLUTEX (0x3D) non-zero negative" =
@@ -4929,7 +4939,7 @@ let%expect_test "testing AND ABSOLUTEX (0x3D) non-zero negative" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x80 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1003 inst: AND $%04X,X |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x80 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1003 inst: AND $6944,X |}]
 ;;
 
 let%expect_test "testing AND ABSOLUTEX (0x3D) zero " =
@@ -4945,7 +4955,7 @@ let%expect_test "testing AND ABSOLUTEX (0x3D) zero " =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x00 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZc pc: 0x1003 inst: AND $%04X,X |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x00 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZc pc: 0x1003 inst: AND $6944,X |}]
 ;;
 
 let%expect_test "testing AND ABSOLUTEX (0x3D) Page Cross" =
@@ -4961,7 +4971,7 @@ let%expect_test "testing AND ABSOLUTEX (0x3D) Page Cross" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x01 x: 0xFF y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: AND $%04X,X |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x01 x: 0xFF y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: AND $6944,X |}]
 ;;
 
 let%expect_test "testing ORA ABSOLUTEX (0x1D) non-zero positive" =
@@ -4977,7 +4987,7 @@ let%expect_test "testing ORA ABSOLUTEX (0x1D) non-zero positive" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x05 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: ORA $%04X,X |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x05 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: ORA $6944,X |}]
 ;;
 
 let%expect_test "testing ORA ABSOLUTEX (0x1D) non-zero negative" =
@@ -4993,7 +5003,7 @@ let%expect_test "testing ORA ABSOLUTEX (0x1D) non-zero negative" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x84 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1003 inst: ORA $%04X,X |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x84 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1003 inst: ORA $6944,X |}]
 ;;
 
 let%expect_test "testing ORA ABSOLUTEX (0x1D) zero " =
@@ -5009,7 +5019,7 @@ let%expect_test "testing ORA ABSOLUTEX (0x1D) zero " =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x00 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZc pc: 0x1003 inst: ORA $%04X,X |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x00 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZc pc: 0x1003 inst: ORA $6944,X |}]
 ;;
 
 let%expect_test "testing ORA ABSOLUTEX (0x1D) Page Cross" =
@@ -5025,7 +5035,7 @@ let%expect_test "testing ORA ABSOLUTEX (0x1D) Page Cross" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x05 x: 0xFF y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: ORA $%04X,X |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x05 x: 0xFF y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: ORA $6944,X |}]
 ;;
 
 let%expect_test "testing ADC ABSOLUTEX (0x7D) non-zero positive" =
@@ -5041,7 +5051,7 @@ let%expect_test "testing ADC ABSOLUTEX (0x7D) non-zero positive" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x06 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: ADC $%04X,X |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x06 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: ADC $6944,X |}]
 ;;
 
 let%expect_test "testing ADC ABSOLUTEX (0x7D) Incoming carry" =
@@ -5057,7 +5067,7 @@ let%expect_test "testing ADC ABSOLUTEX (0x7D) Incoming carry" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x07 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: ADC $%04X,X |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x07 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: ADC $6944,X |}]
 ;;
 
 let%expect_test "testing ADC ABSOLUTEX (0x7D) Genrating Carry " =
@@ -5073,7 +5083,7 @@ let%expect_test "testing ADC ABSOLUTEX (0x7D) Genrating Carry " =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x00 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZC pc: 0x1003 inst: ADC $%04X,X |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x00 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZC pc: 0x1003 inst: ADC $6944,X |}]
 ;;
 
 let%expect_test "testing ADC ABSOLUTEX (0x7D) Pos+Pos=Neg" =
@@ -5089,7 +5099,7 @@ let%expect_test "testing ADC ABSOLUTEX (0x7D) Pos+Pos=Neg" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x80 x: 0x02 y: 0x03 sp: 0xFD sr: NV-bdizc pc: 0x1003 inst: ADC $%04X,X |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x80 x: 0x02 y: 0x03 sp: 0xFD sr: NV-bdizc pc: 0x1003 inst: ADC $6944,X |}]
 ;;
 
 let%expect_test "testing ADC ABSOLUTEX (0x7D) Pos+Neg" =
@@ -5105,7 +5115,7 @@ let%expect_test "testing ADC ABSOLUTEX (0x7D) Pos+Neg" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0xFF x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1003 inst: ADC $%04X,X |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0xFF x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1003 inst: ADC $6944,X |}]
 ;;
 
 let%expect_test "testing ADC ABSOLUTEX (0x7D) Neg+Neg=Pos" =
@@ -5121,7 +5131,7 @@ let%expect_test "testing ADC ABSOLUTEX (0x7D) Neg+Neg=Pos" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x7F x: 0x02 y: 0x03 sp: 0xFD sr: nV-bdizC pc: 0x1003 inst: ADC $%04X,X |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x7F x: 0x02 y: 0x03 sp: 0xFD sr: nV-bdizC pc: 0x1003 inst: ADC $6944,X |}]
 ;;
 
 let%expect_test "testing ADC ABSOLUTEX (0x7D) Page Cross" =
@@ -5137,7 +5147,7 @@ let%expect_test "testing ADC ABSOLUTEX (0x7D) Page Cross" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x06 x: 0xFF y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: ADC $%04X,X |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x06 x: 0xFF y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: ADC $6944,X |}]
 ;;
 
 let%expect_test "testing STA ABSOLUTEX (0x9D)" =
@@ -5157,8 +5167,7 @@ let%expect_test "testing STA ABSOLUTEX (0x9D)" =
   dump_last_execution_mem executions [ 0x6946 ];
   [%expect
     {|
-    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: STA $%04X,X
-
+    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: STA $6944,X
     Mem: 0x6946 : 0x01
     |}]
 ;;
@@ -5180,8 +5189,7 @@ let%expect_test "testing STA ABSOLUTEX (0x9D) Cross PAge" =
   dump_last_execution_mem executions [ 0x6A43 ];
   [%expect
     {|
-    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x01 x: 0xFF y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: STA $%04X,X
-
+    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x01 x: 0xFF y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: STA $6944,X
     Mem: 0x6A43 : 0x01
     |}]
 ;;
@@ -5201,8 +5209,7 @@ let%expect_test "testing ASL ABSOLUTEX (0x1E) Basic" =
   dump_last_execution_mem executions [ 0x6946 ];
   [%expect
     {|
-    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: ASL $%04X,X
-
+    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: ASL $6944,X
     Mem: 0x6946 : 0x04
     |}]
 ;;
@@ -5222,8 +5229,7 @@ let%expect_test "testing ASL ABSOLUTEX (0x1E) Shift out" =
   dump_last_execution_mem executions [ 0x6946 ];
   [%expect
     {|
-    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZC pc: 0x1003 inst: ASL $%04X,X
-
+    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZC pc: 0x1003 inst: ASL $6944,X
     Mem: 0x6946 : 0x00
     |}]
 ;;
@@ -5243,8 +5249,7 @@ let%expect_test "testing ASL ABSOLUTEX (0x1E) Negative Flag" =
   dump_last_execution_mem executions [ 0x6946 ];
   [%expect
     {|
-    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1003 inst: ASL $%04X,X
-
+    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1003 inst: ASL $6944,X
     Mem: 0x6946 : 0x80
     |}]
 ;;
@@ -5264,8 +5269,7 @@ let%expect_test "testing ASL ABSOLUTEX (0x1E) Cross Page" =
   dump_last_execution_mem executions [ 0x6A43 ];
   [%expect
     {|
-    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x01 x: 0xFF y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: ASL $%04X,X
-
+    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x01 x: 0xFF y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: ASL $6944,X
     Mem: 0x6A43 : 0x04
     |}]
 ;;
@@ -5283,7 +5287,7 @@ let%expect_test "testing CMP ABSOLUTEX (0xDD) Equality " =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x42 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZC pc: 0x1003 inst: CMP $%04X,X |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x42 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZC pc: 0x1003 inst: CMP $6944,X |}]
 ;;
 
 let%expect_test "testing CMP ABSOLUTEX (0xDD) Greater than" =
@@ -5299,7 +5303,7 @@ let%expect_test "testing CMP ABSOLUTEX (0xDD) Greater than" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0xFF x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizC pc: 0x1003 inst: CMP $%04X,X |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0xFF x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizC pc: 0x1003 inst: CMP $6944,X |}]
 ;;
 
 let%expect_test "testing CMP ABSOLUTEX (0xDD) Less than" =
@@ -5315,7 +5319,7 @@ let%expect_test "testing CMP ABSOLUTEX (0xDD) Less than" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x02 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1003 inst: CMP $%04X,X |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x02 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1003 inst: CMP $6944,X |}]
 ;;
 
 let%expect_test "testing CMP ABSOLUTEX (0xDD) PAge Cross" =
@@ -5331,7 +5335,7 @@ let%expect_test "testing CMP ABSOLUTEX (0xDD) PAge Cross" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x42 x: 0xFF y: 0x03 sp: 0xFD sr: nv-bdiZC pc: 0x1003 inst: CMP $%04X,X |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x42 x: 0xFF y: 0x03 sp: 0xFD sr: nv-bdiZC pc: 0x1003 inst: CMP $6944,X |}]
 ;;
 
 let%expect_test "testing DEC ABSOLUTEX (0xDE) Dec 1" =
@@ -5349,8 +5353,7 @@ let%expect_test "testing DEC ABSOLUTEX (0xDE) Dec 1" =
   dump_last_execution_mem executions [ 0x6946 ];
   [%expect
     {|
-    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: DEC $%04X,X
-
+    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: DEC $6944,X
     Mem: 0x6946 : 0x01
     |}]
 ;;
@@ -5370,8 +5373,7 @@ let%expect_test "testing DEC ABSOLUTEX (0xDE) Set negative flag" =
   dump_last_execution_mem executions [ 0x6946 ];
   [%expect
     {|
-    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1003 inst: DEC $%04X,X
-
+    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1003 inst: DEC $6944,X
     Mem: 0x6946 : 0xFF
     |}]
 ;;
@@ -5391,8 +5393,7 @@ let%expect_test "testing DEC ABSOLUTEX (0xDE) Unset negative flag" =
   dump_last_execution_mem executions [ 0x6946 ];
   [%expect
     {|
-    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: DEC $%04X,X
-
+    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: DEC $6944,X
     Mem: 0x6946 : 0x7F
     |}]
 ;;
@@ -5412,8 +5413,7 @@ let%expect_test "testing DEC ABSOLUTEX (0xDE) Dec to zero" =
   dump_last_execution_mem executions [ 0x6946 ];
   [%expect
     {|
-    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZc pc: 0x1003 inst: DEC $%04X,X
-
+    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZc pc: 0x1003 inst: DEC $6944,X
     Mem: 0x6946 : 0x00
     |}]
 ;;
@@ -5433,8 +5433,7 @@ let%expect_test "testing DEC ABSOLUTEX (0xDE) Page Cross" =
   dump_last_execution_mem executions [ 0x6A43 ];
   [%expect
     {|
-    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x01 x: 0xFF y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: DEC $%04X,X
-
+    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x01 x: 0xFF y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: DEC $6944,X
     Mem: 0x6A43 : 0x01
     |}]
 ;;
@@ -5454,8 +5453,7 @@ let%expect_test "testing INC ABSOLUTEX (0xFE) Inc 1" =
   dump_last_execution_mem executions [ 0x6946 ];
   [%expect
     {|
-    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: INC $%04X,X
-
+    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: INC $6944,X
     Mem: 0x6946 : 0x03
     |}]
 ;;
@@ -5475,8 +5473,7 @@ let%expect_test "testing INC ABSOLUTEX (0xFE) Set negative flag" =
   dump_last_execution_mem executions [ 0x6946 ];
   [%expect
     {|
-    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1003 inst: INC $%04X,X
-
+    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1003 inst: INC $6944,X
     Mem: 0x6946 : 0x80
     |}]
 ;;
@@ -5496,8 +5493,7 @@ let%expect_test "testing INC ABSOLUTEX (0xFE) Overflow" =
   dump_last_execution_mem executions [ 0x6946 ];
   [%expect
     {|
-    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZc pc: 0x1003 inst: INC $%04X,X
-
+    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZc pc: 0x1003 inst: INC $6944,X
     Mem: 0x6946 : 0x00
     |}]
 ;;
@@ -5517,8 +5513,7 @@ let%expect_test "testing INC ABSOLUTEX (0xFE) Page Cross" =
   dump_last_execution_mem executions [ 0x6A43 ];
   [%expect
     {|
-    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x01 x: 0xFF y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: INC $%04X,X
-
+    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x01 x: 0xFF y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: INC $6944,X
     Mem: 0x6A43 : 0x03
     |}]
 ;;
@@ -5538,8 +5533,7 @@ let%expect_test "testing ROR ABSOLUTEX (0x7E) carry to bit 7" =
   dump_last_execution_mem executions [ 0x6946 ];
   [%expect
     {|
-    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1003 inst: ROR $%04X,X
-
+    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1003 inst: ROR $6944,X
     Mem: 0x6946 : 0x80
     |}]
 ;;
@@ -5559,8 +5553,7 @@ let%expect_test "testing ROR ABSOLUTEX (0x7E) bit 0 to carry" =
   dump_last_execution_mem executions [ 0x6946 ];
   [%expect
     {|
-    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZC pc: 0x1003 inst: ROR $%04X,X
-
+    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZC pc: 0x1003 inst: ROR $6944,X
     Mem: 0x6946 : 0x00
     |}]
 ;;
@@ -5580,8 +5573,7 @@ let%expect_test "testing ROR ABSOLUTEX (0x7E) Negative Flag" =
   dump_last_execution_mem executions [ 0x6946 ];
   [%expect
     {|
-    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizC pc: 0x1003 inst: ROR $%04X,X
-
+    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizC pc: 0x1003 inst: ROR $6944,X
     Mem: 0x6946 : 0xBF
     |}]
 ;;
@@ -5601,8 +5593,7 @@ let%expect_test "testing ROR ABSOLUTEX (0x7E) Page Cross" =
   dump_last_execution_mem executions [ 0x6A43 ];
   [%expect
     {|
-    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x01 x: 0xFF y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1003 inst: ROR $%04X,X
-
+    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x01 x: 0xFF y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1003 inst: ROR $6944,X
     Mem: 0x6A43 : 0x80
     |}]
 ;;
@@ -5622,8 +5613,7 @@ let%expect_test "testing ROL ABSOLUTEX (0x3E) Carry to bit 0" =
   dump_last_execution_mem executions [ 0x6946 ];
   [%expect
     {|
-    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: ROL $%04X,X
-
+    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: ROL $6944,X
     Mem: 0x6946 : 0x01
     |}]
 ;;
@@ -5643,8 +5633,7 @@ let%expect_test "testing ROL ABSOLUTEX (0x3E) bit 7 to carry" =
   dump_last_execution_mem executions [ 0x6946 ];
   [%expect
     {|
-    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZC pc: 0x1003 inst: ROL $%04X,X
-
+    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZC pc: 0x1003 inst: ROL $6944,X
     Mem: 0x6946 : 0x00
     |}]
 ;;
@@ -5664,8 +5653,7 @@ let%expect_test "testing ROL ABSOLUTEX (0x3E) Negative Flag" =
   dump_last_execution_mem executions [ 0x6946 ];
   [%expect
     {|
-    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1003 inst: ROL $%04X,X
-
+    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1003 inst: ROL $6944,X
     Mem: 0x6946 : 0x80
     |}]
 ;;
@@ -5685,8 +5673,7 @@ let%expect_test "testing ROL ABSOLUTEX (0x3E) Wrap Around" =
   dump_last_execution_mem executions [ 0x6A43 ];
   [%expect
     {|
-    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x01 x: 0xFF y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: ROL $%04X,X
-
+    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x01 x: 0xFF y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: ROL $6944,X
     Mem: 0x6A43 : 0x01
     |}]
 ;;
@@ -5706,8 +5693,7 @@ let%expect_test "testing LSR ABSOLUTEX (0x5E) Basic" =
   dump_last_execution_mem executions [ 0x6946 ];
   [%expect
     {|
-    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: LSR $%04X,X
-
+    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: LSR $6944,X
     Mem: 0x6946 : 0x01
     |}]
 ;;
@@ -5727,8 +5713,7 @@ let%expect_test "testing LSR ABSOLUTEX (0x5E) Shift out" =
   dump_last_execution_mem executions [ 0x6946 ];
   [%expect
     {|
-    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZC pc: 0x1003 inst: LSR $%04X,X
-
+    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZC pc: 0x1003 inst: LSR $6944,X
     Mem: 0x6946 : 0x00
     |}]
 ;;
@@ -5748,8 +5733,7 @@ let%expect_test "testing LSR ABSOLUTEX (0x5E) High bit clear" =
   dump_last_execution_mem executions [ 0x6946 ];
   [%expect
     {|
-    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: LSR $%04X,X
-
+    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: LSR $6944,X
     Mem: 0x6946 : 0x40
     |}]
 ;;
@@ -5769,8 +5753,7 @@ let%expect_test "testing LSR ABSOLUTEX (0x5E) Page Cross" =
   dump_last_execution_mem executions [ 0x6A43 ];
   [%expect
     {|
-    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x01 x: 0xFF y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: LSR $%04X,X
-
+    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x01 x: 0xFF y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: LSR $6944,X
     Mem: 0x6A43 : 0x01
     |}]
 ;;
@@ -5788,7 +5771,7 @@ let%expect_test "testing ADC ABSOLUTEY (0x79) non-zero positive" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x06 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: ADC $%04X,Y |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x06 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: ADC $6944,Y |}]
 ;;
 
 let%expect_test "testing ADC ABSOLUTEY (0x79) Incoming carry" =
@@ -5804,7 +5787,7 @@ let%expect_test "testing ADC ABSOLUTEY (0x79) Incoming carry" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x07 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: ADC $%04X,Y |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x07 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: ADC $6944,Y |}]
 ;;
 
 let%expect_test "testing ADC ABSOLUTEY (0x79) Genrating Carry " =
@@ -5820,7 +5803,7 @@ let%expect_test "testing ADC ABSOLUTEY (0x79) Genrating Carry " =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x00 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZC pc: 0x1003 inst: ADC $%04X,Y |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x00 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZC pc: 0x1003 inst: ADC $6944,Y |}]
 ;;
 
 let%expect_test "testing ADC ABSOLUTEY (0x79) Pos+Pos=Neg" =
@@ -5836,7 +5819,7 @@ let%expect_test "testing ADC ABSOLUTEY (0x79) Pos+Pos=Neg" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x80 x: 0x02 y: 0x03 sp: 0xFD sr: NV-bdizc pc: 0x1003 inst: ADC $%04X,Y |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x80 x: 0x02 y: 0x03 sp: 0xFD sr: NV-bdizc pc: 0x1003 inst: ADC $6944,Y |}]
 ;;
 
 let%expect_test "testing ADC ABSOLUTEY (0x79) Pos+Neg" =
@@ -5852,7 +5835,7 @@ let%expect_test "testing ADC ABSOLUTEY (0x79) Pos+Neg" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0xFF x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1003 inst: ADC $%04X,Y |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0xFF x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1003 inst: ADC $6944,Y |}]
 ;;
 
 let%expect_test "testing ADC ABSOLUTEY (0x79) Neg+Neg=Pos" =
@@ -5868,7 +5851,7 @@ let%expect_test "testing ADC ABSOLUTEY (0x79) Neg+Neg=Pos" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x7F x: 0x02 y: 0x03 sp: 0xFD sr: nV-bdizC pc: 0x1003 inst: ADC $%04X,Y |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x7F x: 0x02 y: 0x03 sp: 0xFD sr: nV-bdizC pc: 0x1003 inst: ADC $6944,Y |}]
 ;;
 
 let%expect_test "testing ADC ABSOLUTEY (0x79) Page Cross" =
@@ -5884,7 +5867,7 @@ let%expect_test "testing ADC ABSOLUTEY (0x79) Page Cross" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x06 x: 0x02 y: 0xFF sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: ADC $%04X,Y |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x06 x: 0x02 y: 0xFF sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: ADC $6944,Y |}]
 ;;
 
 let%expect_test "testing STA ABSOLUTEY (0x99)" =
@@ -5902,8 +5885,7 @@ let%expect_test "testing STA ABSOLUTEY (0x99)" =
   dump_last_execution_mem executions [ 0x6947 ];
   [%expect
     {|
-    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: STA $%04X,Y
-
+    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: STA $6944,Y
     Mem: 0x6947 : 0x01
     |}]
 ;;
@@ -5923,8 +5905,7 @@ let%expect_test "testing STA ABSOLUTEY (0x99) Cross PAge" =
   dump_last_execution_mem executions [ 0x6A43 ];
   [%expect
     {|
-    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0xFF sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: STA $%04X,Y
-
+    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0xFF sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: STA $6944,Y
     Mem: 0x6A43 : 0x01
     |}]
 ;;
@@ -5942,7 +5923,7 @@ let%expect_test "testing ORA ABSOLUTEY (0x19) non-zero positive" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x05 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: ORA $%04X,Y |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x05 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: ORA $6944,Y |}]
 ;;
 
 let%expect_test "testing ORA ABSOLUTEY (0x19) non-zero negative" =
@@ -5958,7 +5939,7 @@ let%expect_test "testing ORA ABSOLUTEY (0x19) non-zero negative" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x84 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1003 inst: ORA $%04X,Y |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x84 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1003 inst: ORA $6944,Y |}]
 ;;
 
 let%expect_test "testing ORA ABSOLUTEY (0x19) zero " =
@@ -5974,7 +5955,7 @@ let%expect_test "testing ORA ABSOLUTEY (0x19) zero " =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x00 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZc pc: 0x1003 inst: ORA $%04X,Y |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x00 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZc pc: 0x1003 inst: ORA $6944,Y |}]
 ;;
 
 let%expect_test "testing ORA ABSOLUTEY (0x19) Page Cross" =
@@ -5990,7 +5971,7 @@ let%expect_test "testing ORA ABSOLUTEY (0x19) Page Cross" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x05 x: 0x02 y: 0xFF sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: ORA $%04X,Y |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x05 x: 0x02 y: 0xFF sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: ORA $6944,Y |}]
 ;;
 
 let%expect_test "testing AND ABSOLUTEY (0x39) non-zero positive" =
@@ -6006,7 +5987,7 @@ let%expect_test "testing AND ABSOLUTEY (0x39) non-zero positive" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: AND $%04X,Y |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: AND $6944,Y |}]
 ;;
 
 let%expect_test "testing AND ABSOLUTEY (0x39) non-zero negative" =
@@ -6022,7 +6003,7 @@ let%expect_test "testing AND ABSOLUTEY (0x39) non-zero negative" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x80 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1003 inst: AND $%04X,Y |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x80 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1003 inst: AND $6944,Y |}]
 ;;
 
 let%expect_test "testing AND ABSOLUTEY (0x39) zero " =
@@ -6038,7 +6019,7 @@ let%expect_test "testing AND ABSOLUTEY (0x39) zero " =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x00 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZc pc: 0x1003 inst: AND $%04X,Y |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x00 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZc pc: 0x1003 inst: AND $6944,Y |}]
 ;;
 
 let%expect_test "testing AND ABSOLUTEY (0x39) Page Cross" =
@@ -6054,7 +6035,7 @@ let%expect_test "testing AND ABSOLUTEY (0x39) Page Cross" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0xFF sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: AND $%04X,Y |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0xFF sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: AND $6944,Y |}]
 ;;
 
 let%expect_test "testing EOR ABSOLUTEY (0x59) non-zero positive" =
@@ -6070,7 +6051,7 @@ let%expect_test "testing EOR ABSOLUTEY (0x59) non-zero positive" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x05 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: EOR $%04X,Y |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x05 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: EOR $6944,Y |}]
 ;;
 
 let%expect_test "testing EOR ABSOLUTEY (0x59) non-zero negative" =
@@ -6086,7 +6067,7 @@ let%expect_test "testing EOR ABSOLUTEY (0x59) non-zero negative" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x85 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1003 inst: EOR $%04X,Y |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x85 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1003 inst: EOR $6944,Y |}]
 ;;
 
 let%expect_test "testing EOR ABSOLUTEY (0x59) zero " =
@@ -6102,7 +6083,7 @@ let%expect_test "testing EOR ABSOLUTEY (0x59) zero " =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x00 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZc pc: 0x1003 inst: EOR $%04X,Y |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x00 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZc pc: 0x1003 inst: EOR $6944,Y |}]
 ;;
 
 let%expect_test "testing EOR ABSOLUTEY (0x59) Page Cross" =
@@ -6118,7 +6099,7 @@ let%expect_test "testing EOR ABSOLUTEY (0x59) Page Cross" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x05 x: 0x02 y: 0xFF sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: EOR $%04X,Y |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x05 x: 0x02 y: 0xFF sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: EOR $6944,Y |}]
 ;;
 
 let%expect_test "testing CMP ABSOLUTEY (0xD9) Equality " =
@@ -6134,7 +6115,7 @@ let%expect_test "testing CMP ABSOLUTEY (0xD9) Equality " =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x42 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZC pc: 0x1003 inst: CMP $%04X,Y |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x42 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZC pc: 0x1003 inst: CMP $6944,Y |}]
 ;;
 
 let%expect_test "testing CMP ABSOLUTEY (0xD9) Greater than" =
@@ -6150,7 +6131,7 @@ let%expect_test "testing CMP ABSOLUTEY (0xD9) Greater than" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0xFF x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizC pc: 0x1003 inst: CMP $%04X,Y |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0xFF x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizC pc: 0x1003 inst: CMP $6944,Y |}]
 ;;
 
 let%expect_test "testing CMP ABSOLUTEY (0xD9) Less than" =
@@ -6166,7 +6147,7 @@ let%expect_test "testing CMP ABSOLUTEY (0xD9) Less than" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x02 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1003 inst: CMP $%04X,Y |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x02 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1003 inst: CMP $6944,Y |}]
 ;;
 
 let%expect_test "testing CMP ABSOLUTEY (0xD9) PAge Cross" =
@@ -6182,7 +6163,7 @@ let%expect_test "testing CMP ABSOLUTEY (0xD9) PAge Cross" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x42 x: 0x02 y: 0xFF sp: 0xFD sr: nv-bdiZC pc: 0x1003 inst: CMP $%04X,Y |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x42 x: 0x02 y: 0xFF sp: 0xFD sr: nv-bdiZC pc: 0x1003 inst: CMP $6944,Y |}]
 ;;
 
 let%expect_test "testing LDA ABSOLUTEX (0xB9) non-zero positive" =
@@ -6198,7 +6179,7 @@ let%expect_test "testing LDA ABSOLUTEX (0xB9) non-zero positive" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x04 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: LDA $%04X,Y |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x04 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: LDA $6944,Y |}]
 ;;
 
 let%expect_test "testing LDA ABSOLITEX (0xB9) non-zero negative" =
@@ -6214,7 +6195,7 @@ let%expect_test "testing LDA ABSOLITEX (0xB9) non-zero negative" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x84 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1003 inst: LDA $%04X,Y |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x84 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1003 inst: LDA $6944,Y |}]
 ;;
 
 let%expect_test "testing LDA ABSOLITEX (0xB9) zero" =
@@ -6230,7 +6211,7 @@ let%expect_test "testing LDA ABSOLITEX (0xB9) zero" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x00 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZc pc: 0x1003 inst: LDA $%04X,Y |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x00 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZc pc: 0x1003 inst: LDA $6944,Y |}]
 ;;
 
 let%expect_test "testing LDA ABSOLITEX (0xB9) Page Cross" =
@@ -6246,7 +6227,7 @@ let%expect_test "testing LDA ABSOLITEX (0xB9) Page Cross" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x04 x: 0x02 y: 0xFF sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: LDA $%04X,Y |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x04 x: 0x02 y: 0xFF sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: LDA $6944,Y |}]
 ;;
 
 let%expect_test "testing LDX ABSOLUTEY (0xBE) non-zero positive" =
@@ -6262,7 +6243,7 @@ let%expect_test "testing LDX ABSOLUTEY (0xBE) non-zero positive" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x01 x: 0x04 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: LDX $%04X,Y |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x01 x: 0x04 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: LDX $6944,Y |}]
 ;;
 
 let%expect_test "testing LDX ABSOLUTEY (0xBE) non-zero negative" =
@@ -6278,7 +6259,7 @@ let%expect_test "testing LDX ABSOLUTEY (0xBE) non-zero negative" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x01 x: 0x84 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1003 inst: LDX $%04X,Y |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x01 x: 0x84 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1003 inst: LDX $6944,Y |}]
 ;;
 
 let%expect_test "testing LDX ABSOLUTEY (0xBE) zero " =
@@ -6294,7 +6275,7 @@ let%expect_test "testing LDX ABSOLUTEY (0xBE) zero " =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x01 x: 0x00 y: 0x03 sp: 0xFD sr: nv-bdiZc pc: 0x1003 inst: LDX $%04X,Y |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x01 x: 0x00 y: 0x03 sp: 0xFD sr: nv-bdiZc pc: 0x1003 inst: LDX $6944,Y |}]
 ;;
 
 let%expect_test "testing LDX ABSOLUTEY (0xBE) Page Cross" =
@@ -6310,7 +6291,7 @@ let%expect_test "testing LDX ABSOLUTEY (0xBE) Page Cross" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x01 x: 0x04 y: 0xFF sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: LDX $%04X,Y |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x01 x: 0x04 y: 0xFF sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: LDX $6944,Y |}]
 ;;
 
 let%expect_test "testing SBC ABSOLUTEY (0xF9) No Borrow" =
@@ -6326,7 +6307,7 @@ let%expect_test "testing SBC ABSOLUTEY (0xF9) No Borrow" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x03 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizC pc: 0x1003 inst: SBC $%04X,Y |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x03 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizC pc: 0x1003 inst: SBC $6944,Y |}]
 ;;
 
 let%expect_test "testing SBC ABSOLUTEY (0xF9) with borrow" =
@@ -6342,7 +6323,7 @@ let%expect_test "testing SBC ABSOLUTEY (0xF9) with borrow" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x02 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizC pc: 0x1003 inst: SBC $%04X,Y |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x02 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizC pc: 0x1003 inst: SBC $6944,Y |}]
 ;;
 
 let%expect_test "testing SBC ABSOLUTEY (0xF9) Underflow" =
@@ -6358,7 +6339,7 @@ let%expect_test "testing SBC ABSOLUTEY (0xF9) Underflow" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0xFF x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1003 inst: SBC $%04X,Y |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0xFF x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1003 inst: SBC $6944,Y |}]
 ;;
 
 let%expect_test "testing SBC ABSOLUTEY (0xF9) Overflow" =
@@ -6374,7 +6355,7 @@ let%expect_test "testing SBC ABSOLUTEY (0xF9) Overflow" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x7F x: 0x02 y: 0x03 sp: 0xFD sr: nV-bdizC pc: 0x1003 inst: SBC $%04X,Y |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x7F x: 0x02 y: 0x03 sp: 0xFD sr: nV-bdizC pc: 0x1003 inst: SBC $6944,Y |}]
 ;;
 
 let%expect_test "testing SBC ABSOLUTEY (0xF9) Page Cross" =
@@ -6390,7 +6371,7 @@ let%expect_test "testing SBC ABSOLUTEY (0xF9) Page Cross" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x03 x: 0x02 y: 0xFF sp: 0xFD sr: nv-bdizC pc: 0x1003 inst: SBC $%04X,Y |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x03 x: 0x02 y: 0xFF sp: 0xFD sr: nv-bdizC pc: 0x1003 inst: SBC $6944,Y |}]
 ;;
 
 let%expect_test "testing SBC ABSOLUTE (0xED) No Borrow" =
@@ -6406,7 +6387,7 @@ let%expect_test "testing SBC ABSOLUTE (0xED) No Borrow" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x03 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizC pc: 0x1003 inst: SBC $%04X |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x03 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizC pc: 0x1003 inst: SBC $6944 |}]
 ;;
 
 let%expect_test "testing SBC ABSOLUTE (0xED) with borrow" =
@@ -6422,7 +6403,7 @@ let%expect_test "testing SBC ABSOLUTE (0xED) with borrow" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x02 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizC pc: 0x1003 inst: SBC $%04X |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x02 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizC pc: 0x1003 inst: SBC $6944 |}]
 ;;
 
 let%expect_test "testing SBC ABSOLUTE (0xED) Underflow" =
@@ -6438,7 +6419,7 @@ let%expect_test "testing SBC ABSOLUTE (0xED) Underflow" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0xFF x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1003 inst: SBC $%04X |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0xFF x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1003 inst: SBC $6944 |}]
 ;;
 
 let%expect_test "testing SBC ABSOLUTE (0xED) Overflow" =
@@ -6454,7 +6435,7 @@ let%expect_test "testing SBC ABSOLUTE (0xED) Overflow" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x7F x: 0x02 y: 0x03 sp: 0xFD sr: nV-bdizC pc: 0x1003 inst: SBC $%04X |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x7F x: 0x02 y: 0x03 sp: 0xFD sr: nV-bdizC pc: 0x1003 inst: SBC $6944 |}]
 ;;
 
 let%expect_test "testing SBC ABSOLUTEX (0xFD) No Borrow" =
@@ -6470,7 +6451,7 @@ let%expect_test "testing SBC ABSOLUTEX (0xFD) No Borrow" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x03 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizC pc: 0x1003 inst: SBC $%04X,X |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x03 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizC pc: 0x1003 inst: SBC $6944,X |}]
 ;;
 
 let%expect_test "testing SBC ABSOLUTEX (0xFD) with borrow" =
@@ -6486,7 +6467,7 @@ let%expect_test "testing SBC ABSOLUTEX (0xFD) with borrow" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x02 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizC pc: 0x1003 inst: SBC $%04X,X |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x02 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizC pc: 0x1003 inst: SBC $6944,X |}]
 ;;
 
 let%expect_test "testing SBC ABSOLUTEX (0xFD) Underflow" =
@@ -6502,7 +6483,7 @@ let%expect_test "testing SBC ABSOLUTEX (0xFD) Underflow" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0xFF x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1003 inst: SBC $%04X,X |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0xFF x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1003 inst: SBC $6944,X |}]
 ;;
 
 let%expect_test "testing SBC ABSOLUTEX (0xFD) Overflow" =
@@ -6518,7 +6499,7 @@ let%expect_test "testing SBC ABSOLUTEX (0xFD) Overflow" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x7F x: 0x02 y: 0x03 sp: 0xFD sr: nV-bdizC pc: 0x1003 inst: SBC $%04X,X |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x7F x: 0x02 y: 0x03 sp: 0xFD sr: nV-bdizC pc: 0x1003 inst: SBC $6944,X |}]
 ;;
 
 let%expect_test "testing SBC ABSOLUTEX (0xFD) Page Cross" =
@@ -6534,7 +6515,7 @@ let%expect_test "testing SBC ABSOLUTEX (0xFD) Page Cross" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x03 x: 0xFF y: 0x03 sp: 0xFD sr: nv-bdizC pc: 0x1003 inst: SBC $%04X,X |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x03 x: 0xFF y: 0x03 sp: 0xFD sr: nv-bdizC pc: 0x1003 inst: SBC $6944,X |}]
 ;;
 
 let%expect_test "testing SBC Binary IMMEDIATE (0xE9) No Borrow" =
@@ -6549,7 +6530,7 @@ let%expect_test "testing SBC Binary IMMEDIATE (0xE9) No Borrow" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x03 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizC pc: 0x1002 inst: SBC #%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x03 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizC pc: 0x1002 inst: SBC #$02 |}]
 ;;
 
 let%expect_test "testing SBC Binary IMMEDIATE (0xE9) With Borrow" =
@@ -6564,7 +6545,7 @@ let%expect_test "testing SBC Binary IMMEDIATE (0xE9) With Borrow" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x02 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizC pc: 0x1002 inst: SBC #%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x02 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizC pc: 0x1002 inst: SBC #$02 |}]
 ;;
 
 let%expect_test "testing SBC Binary IMMEDIATE (0xE9) Underflow" =
@@ -6579,7 +6560,7 @@ let%expect_test "testing SBC Binary IMMEDIATE (0xE9) Underflow" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0xFF x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1002 inst: SBC #%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0xFF x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1002 inst: SBC #$02 |}]
 ;;
 
 let%expect_test "testing SBC Binary IMMEDIATE (0xE9) Overflow" =
@@ -6594,7 +6575,7 @@ let%expect_test "testing SBC Binary IMMEDIATE (0xE9) Overflow" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x7F x: 0x02 y: 0x03 sp: 0xFD sr: nV-bdizC pc: 0x1002 inst: SBC #%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x7F x: 0x02 y: 0x03 sp: 0xFD sr: nV-bdizC pc: 0x1002 inst: SBC #$01 |}]
 ;;
 
 let%expect_test "testing LDA INDEXEDINDIRECT (0xA1) non-zero positive" =
@@ -6612,7 +6593,7 @@ let%expect_test "testing LDA INDEXEDINDIRECT (0xA1) non-zero positive" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x04 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: LDA ($%02X,X) |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x04 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: LDA ($44,X) |}]
 ;;
 
 let%expect_test "testing LDA INDEXEDINDIRECT (0xA1) non-zero negative" =
@@ -6630,7 +6611,7 @@ let%expect_test "testing LDA INDEXEDINDIRECT (0xA1) non-zero negative" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x84 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1002 inst: LDA ($%02X,X) |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x84 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1002 inst: LDA ($44,X) |}]
 ;;
 
 let%expect_test "testing LDA INDEXEDINDIRECT (0xA1) zero" =
@@ -6648,7 +6629,7 @@ let%expect_test "testing LDA INDEXEDINDIRECT (0xA1) zero" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x00 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZc pc: 0x1002 inst: LDA ($%02X,X) |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x00 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZc pc: 0x1002 inst: LDA ($44,X) |}]
 ;;
 
 let%expect_test "testing LDA INDEXEDINDIRECT (0xA1) End of page" =
@@ -6666,7 +6647,7 @@ let%expect_test "testing LDA INDEXEDINDIRECT (0xA1) End of page" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x04 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: LDA ($%02X,X) |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x04 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: LDA ($FD,X) |}]
 ;;
 
 let%expect_test "testing EOR INDEXEDINDIRECT (0x41) non-zero positive" =
@@ -6684,7 +6665,7 @@ let%expect_test "testing EOR INDEXEDINDIRECT (0x41) non-zero positive" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x05 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: EOR ($%02X,X) |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x05 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: EOR ($44,X) |}]
 ;;
 
 let%expect_test "testing EOR INDEXEDINDIRECT (0x41) non-zero negative" =
@@ -6702,7 +6683,7 @@ let%expect_test "testing EOR INDEXEDINDIRECT (0x41) non-zero negative" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x85 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1002 inst: EOR ($%02X,X) |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x85 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1002 inst: EOR ($44,X) |}]
 ;;
 
 let%expect_test "testing EOR INDEXEDINDIRECT (0x41) zero" =
@@ -6720,7 +6701,7 @@ let%expect_test "testing EOR INDEXEDINDIRECT (0x41) zero" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x00 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZc pc: 0x1002 inst: EOR ($%02X,X) |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x00 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZc pc: 0x1002 inst: EOR ($44,X) |}]
 ;;
 
 let%expect_test "testing EOR INDEXEDINDIRECT (0x41) End of page" =
@@ -6738,7 +6719,7 @@ let%expect_test "testing EOR INDEXEDINDIRECT (0x41) End of page" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x05 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: EOR ($%02X,X) |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x05 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: EOR ($FD,X) |}]
 ;;
 
 let%expect_test "testing AND INDEXEDINDIRECT (0x21) non-zero positive" =
@@ -6756,7 +6737,7 @@ let%expect_test "testing AND INDEXEDINDIRECT (0x21) non-zero positive" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: AND ($%02X,X) |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: AND ($44,X) |}]
 ;;
 
 let%expect_test "testing AND INDEXEDINDIRECT (0x21) non-zero negative" =
@@ -6774,7 +6755,7 @@ let%expect_test "testing AND INDEXEDINDIRECT (0x21) non-zero negative" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x80 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1002 inst: AND ($%02X,X) |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x80 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1002 inst: AND ($44,X) |}]
 ;;
 
 let%expect_test "testing AND INDEXEDINDIRECT (0x21) zero" =
@@ -6792,7 +6773,7 @@ let%expect_test "testing AND INDEXEDINDIRECT (0x21) zero" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x00 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZc pc: 0x1002 inst: AND ($%02X,X) |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x00 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZc pc: 0x1002 inst: AND ($44,X) |}]
 ;;
 
 let%expect_test "testing AND INDEXEDINDIRECT (0x21) End of page" =
@@ -6810,7 +6791,7 @@ let%expect_test "testing AND INDEXEDINDIRECT (0x21) End of page" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: AND ($%02X,X) |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: AND ($FD,X) |}]
 ;;
 
 let%expect_test "testing ORA INDEXEDINDIRECT (0x01) non-zero positive" =
@@ -6828,7 +6809,7 @@ let%expect_test "testing ORA INDEXEDINDIRECT (0x01) non-zero positive" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x05 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: ORA ($%02X,X) |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x05 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: ORA ($44,X) |}]
 ;;
 
 let%expect_test "testing ORA INDEXEDINDIRECT (0x01) non-zero negative" =
@@ -6846,7 +6827,7 @@ let%expect_test "testing ORA INDEXEDINDIRECT (0x01) non-zero negative" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x84 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1002 inst: ORA ($%02X,X) |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x84 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1002 inst: ORA ($44,X) |}]
 ;;
 
 let%expect_test "testing ORA INDEXEDINDIRECT (0x01) zero" =
@@ -6864,7 +6845,7 @@ let%expect_test "testing ORA INDEXEDINDIRECT (0x01) zero" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x00 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZc pc: 0x1002 inst: ORA ($%02X,X) |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x00 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZc pc: 0x1002 inst: ORA ($44,X) |}]
 ;;
 
 let%expect_test "testing ORA INDEXEDINDIRECT (0x01) End of page" =
@@ -6882,7 +6863,7 @@ let%expect_test "testing ORA INDEXEDINDIRECT (0x01) End of page" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x05 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: ORA ($%02X,X) |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x05 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: ORA ($FD,X) |}]
 ;;
 
 let%expect_test "testing ADC INDEXEDINDIRECT (0x61) non-zero positive" =
@@ -6900,7 +6881,7 @@ let%expect_test "testing ADC INDEXEDINDIRECT (0x61) non-zero positive" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x06 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: ADC ($%02X,X) |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x06 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: ADC ($44,X) |}]
 ;;
 
 let%expect_test "testing ADC INDEXEDINDIRECT (0x61) Incoming carry" =
@@ -6918,7 +6899,7 @@ let%expect_test "testing ADC INDEXEDINDIRECT (0x61) Incoming carry" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x07 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: ADC ($%02X,X) |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x07 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: ADC ($44,X) |}]
 ;;
 
 let%expect_test "testing ADC INDEXEDINDIRECT (0x61) Generating Carry" =
@@ -6936,7 +6917,7 @@ let%expect_test "testing ADC INDEXEDINDIRECT (0x61) Generating Carry" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x00 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZC pc: 0x1002 inst: ADC ($%02X,X) |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x00 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZC pc: 0x1002 inst: ADC ($44,X) |}]
 ;;
 
 let%expect_test "testing ADC INDEXEDINDIRECT (0x61) Pos+Pos=Neg" =
@@ -6954,7 +6935,7 @@ let%expect_test "testing ADC INDEXEDINDIRECT (0x61) Pos+Pos=Neg" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x80 x: 0x02 y: 0x03 sp: 0xFD sr: NV-bdizc pc: 0x1002 inst: ADC ($%02X,X) |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x80 x: 0x02 y: 0x03 sp: 0xFD sr: NV-bdizc pc: 0x1002 inst: ADC ($44,X) |}]
 ;;
 
 let%expect_test "testing ADC INDEXEDINDIRECT (0x61) Pos+Neg" =
@@ -6972,7 +6953,7 @@ let%expect_test "testing ADC INDEXEDINDIRECT (0x61) Pos+Neg" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0xFF x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1002 inst: ADC ($%02X,X) |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0xFF x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1002 inst: ADC ($44,X) |}]
 ;;
 
 let%expect_test "testing ADC INDEXEDINDIRECT (0x61) Neg+Neg=Pos" =
@@ -6990,7 +6971,7 @@ let%expect_test "testing ADC INDEXEDINDIRECT (0x61) Neg+Neg=Pos" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x7F x: 0x02 y: 0x03 sp: 0xFD sr: nV-bdizC pc: 0x1002 inst: ADC ($%02X,X) |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x7F x: 0x02 y: 0x03 sp: 0xFD sr: nV-bdizC pc: 0x1002 inst: ADC ($44,X) |}]
 ;;
 
 let%expect_test "testing ADC INDEXEDINDIRECT (0x61) End of Page" =
@@ -7008,7 +6989,7 @@ let%expect_test "testing ADC INDEXEDINDIRECT (0x61) End of Page" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x06 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: ADC ($%02X,X) |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x06 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: ADC ($FD,X) |}]
 ;;
 
 let%expect_test "testing STA INDEXEDINDIRECT (0x81)" =
@@ -7028,8 +7009,7 @@ let%expect_test "testing STA INDEXEDINDIRECT (0x81)" =
   dump_last_execution_mem executions [ 0xC010 ];
   [%expect
     {|
-    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: STA ($%02X,X)
-
+    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: STA ($44,X)
     Mem: 0xC010 : 0x01
     |}]
 ;;
@@ -7049,7 +7029,7 @@ let%expect_test "testing CMP INDEXEDINDIRECT (0xC1) Equality" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x42 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZC pc: 0x1002 inst: CMP ($%02X,X) |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x42 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZC pc: 0x1002 inst: CMP ($44,X) |}]
 ;;
 
 let%expect_test "testing CMP INDEXEDINDIRECT (0xC1) Greater Than" =
@@ -7067,7 +7047,7 @@ let%expect_test "testing CMP INDEXEDINDIRECT (0xC1) Greater Than" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0xFF x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizC pc: 0x1002 inst: CMP ($%02X,X) |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0xFF x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizC pc: 0x1002 inst: CMP ($44,X) |}]
 ;;
 
 let%expect_test "testing CMP INDEXEDINDIRECT (0xC1) Less Than" =
@@ -7085,7 +7065,7 @@ let%expect_test "testing CMP INDEXEDINDIRECT (0xC1) Less Than" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x02 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1002 inst: CMP ($%02X,X) |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x02 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1002 inst: CMP ($44,X) |}]
 ;;
 
 let%expect_test "testing CMP INDEXEDINDIRECT (0xC1) End of Page" =
@@ -7103,7 +7083,7 @@ let%expect_test "testing CMP INDEXEDINDIRECT (0xC1) End of Page" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x42 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZC pc: 0x1002 inst: CMP ($%02X,X) |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x42 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZC pc: 0x1002 inst: CMP ($FD,X) |}]
 ;;
 
 let%expect_test "testing SBC INDEXEDINDIRECT (0xE1) No Borrow" =
@@ -7121,7 +7101,7 @@ let%expect_test "testing SBC INDEXEDINDIRECT (0xE1) No Borrow" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x03 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizC pc: 0x1002 inst: SBC ($%02X,X) |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x03 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizC pc: 0x1002 inst: SBC ($44,X) |}]
 ;;
 
 let%expect_test "testing SBC INDEXEDINDIRECT (0xE1) With  Borrow" =
@@ -7139,7 +7119,7 @@ let%expect_test "testing SBC INDEXEDINDIRECT (0xE1) With  Borrow" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x02 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizC pc: 0x1002 inst: SBC ($%02X,X) |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x02 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizC pc: 0x1002 inst: SBC ($44,X) |}]
 ;;
 
 let%expect_test "testing SBC INDEXEDINDIRECT (0xE1) Underflow" =
@@ -7157,7 +7137,7 @@ let%expect_test "testing SBC INDEXEDINDIRECT (0xE1) Underflow" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0xFF x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1002 inst: SBC ($%02X,X) |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0xFF x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1002 inst: SBC ($44,X) |}]
 ;;
 
 let%expect_test "testing SBC INDEXEDINDIRECT (0xE1) Overflow" =
@@ -7175,7 +7155,7 @@ let%expect_test "testing SBC INDEXEDINDIRECT (0xE1) Overflow" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x7F x: 0x02 y: 0x03 sp: 0xFD sr: nV-bdizC pc: 0x1002 inst: SBC ($%02X,X) |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x7F x: 0x02 y: 0x03 sp: 0xFD sr: nV-bdizC pc: 0x1002 inst: SBC ($44,X) |}]
 ;;
 
 let%expect_test "testing SBC INDEXEDINDIRECT (0xE1) End of Page" =
@@ -7193,7 +7173,7 @@ let%expect_test "testing SBC INDEXEDINDIRECT (0xE1) End of Page" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x03 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizC pc: 0x1002 inst: SBC ($%02X,X) |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x03 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizC pc: 0x1002 inst: SBC ($FD,X) |}]
 ;;
 
 let%expect_test "testing LDA INDIRECTINDEXED (0xB1) non-zero positive" =
@@ -7211,7 +7191,7 @@ let%expect_test "testing LDA INDIRECTINDEXED (0xB1) non-zero positive" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x04 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: LDA ($%02X),Y |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x04 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: LDA ($44),Y |}]
 ;;
 
 let%expect_test "testing LDA INDIRECTINDEXED (0xB1) Page Cross" =
@@ -7229,7 +7209,7 @@ let%expect_test "testing LDA INDIRECTINDEXED (0xB1) Page Cross" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x04 x: 0x02 y: 0xFF sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: LDA ($%02X),Y |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x04 x: 0x02 y: 0xFF sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: LDA ($44),Y |}]
 ;;
 
 let%expect_test "testing LDA INDIRECTINDEXED (0xB1) non-zero negative" =
@@ -7247,7 +7227,7 @@ let%expect_test "testing LDA INDIRECTINDEXED (0xB1) non-zero negative" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x84 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1002 inst: LDA ($%02X),Y |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x84 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1002 inst: LDA ($44),Y |}]
 ;;
 
 let%expect_test "testing LDA INDIRECTINDEXED (0xB1) zero" =
@@ -7265,7 +7245,7 @@ let%expect_test "testing LDA INDIRECTINDEXED (0xB1) zero" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x00 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZc pc: 0x1002 inst: LDA ($%02X),Y |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x00 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZc pc: 0x1002 inst: LDA ($44),Y |}]
 ;;
 
 let%expect_test "testing EOR INDIRECTINDEXED (0x51) non-zero positive" =
@@ -7283,7 +7263,7 @@ let%expect_test "testing EOR INDIRECTINDEXED (0x51) non-zero positive" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x05 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: EOR ($%02X),Y |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x05 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: EOR ($44),Y |}]
 ;;
 
 let%expect_test "testing EOR INDIRECTINDEXED (0x51) Page Cross" =
@@ -7301,7 +7281,7 @@ let%expect_test "testing EOR INDIRECTINDEXED (0x51) Page Cross" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x05 x: 0x02 y: 0xFF sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: EOR ($%02X),Y |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x05 x: 0x02 y: 0xFF sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: EOR ($44),Y |}]
 ;;
 
 let%expect_test "testing EOR INDIRECTINDEXED (0x51) non-zero negative" =
@@ -7319,7 +7299,7 @@ let%expect_test "testing EOR INDIRECTINDEXED (0x51) non-zero negative" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x85 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1002 inst: EOR ($%02X),Y |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x85 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1002 inst: EOR ($44),Y |}]
 ;;
 
 let%expect_test "testing EOR INDIRECTINDEXED (0x51) zero" =
@@ -7337,7 +7317,7 @@ let%expect_test "testing EOR INDIRECTINDEXED (0x51) zero" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x00 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZc pc: 0x1002 inst: EOR ($%02X),Y |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x00 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZc pc: 0x1002 inst: EOR ($44),Y |}]
 ;;
 
 let%expect_test "testing AND INDIRECTINDEXED (0x31) non-zero positive" =
@@ -7355,7 +7335,7 @@ let%expect_test "testing AND INDIRECTINDEXED (0x31) non-zero positive" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: AND ($%02X),Y |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: AND ($44),Y |}]
 ;;
 
 let%expect_test "testing AND INDIRECTINDEXED (0x31) page cross" =
@@ -7373,7 +7353,7 @@ let%expect_test "testing AND INDIRECTINDEXED (0x31) page cross" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0xFF sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: AND ($%02X),Y |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0xFF sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: AND ($44),Y |}]
 ;;
 
 let%expect_test "testing AND INDIRECTINDEXED (0x31) non-zero negative" =
@@ -7391,7 +7371,7 @@ let%expect_test "testing AND INDIRECTINDEXED (0x31) non-zero negative" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x80 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1002 inst: AND ($%02X),Y |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x80 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1002 inst: AND ($44),Y |}]
 ;;
 
 let%expect_test "testing AND INDEXEDINDIRECT (0x31) zero" =
@@ -7409,7 +7389,7 @@ let%expect_test "testing AND INDEXEDINDIRECT (0x31) zero" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x00 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZc pc: 0x1002 inst: AND ($%02X),Y |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x00 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZc pc: 0x1002 inst: AND ($44),Y |}]
 ;;
 
 let%expect_test "testing ORA INDIRECTINDEXED (0x11) non-zero positive" =
@@ -7427,7 +7407,7 @@ let%expect_test "testing ORA INDIRECTINDEXED (0x11) non-zero positive" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x05 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: ORA ($%02X),Y |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x05 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: ORA ($44),Y |}]
 ;;
 
 let%expect_test "testing ORA INDIRECTINDEXED (0x11) page cross" =
@@ -7445,7 +7425,7 @@ let%expect_test "testing ORA INDIRECTINDEXED (0x11) page cross" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x05 x: 0x02 y: 0xFF sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: ORA ($%02X),Y |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x05 x: 0x02 y: 0xFF sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: ORA ($44),Y |}]
 ;;
 
 let%expect_test "testing ORA INDIRECTINDEXED (0x11) non-zero negative" =
@@ -7463,7 +7443,7 @@ let%expect_test "testing ORA INDIRECTINDEXED (0x11) non-zero negative" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x84 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1002 inst: ORA ($%02X),Y |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x84 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1002 inst: ORA ($44),Y |}]
 ;;
 
 let%expect_test "testing ORA INDIRECTINDEXED (0x11) zero" =
@@ -7481,7 +7461,7 @@ let%expect_test "testing ORA INDIRECTINDEXED (0x11) zero" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x00 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZc pc: 0x1002 inst: ORA ($%02X),Y |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x00 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZc pc: 0x1002 inst: ORA ($44),Y |}]
 ;;
 
 let%expect_test "testing ADC INDIRECTINDEXED (0x71) non-zero positive" =
@@ -7499,7 +7479,7 @@ let%expect_test "testing ADC INDIRECTINDEXED (0x71) non-zero positive" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x06 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: ADC ($%02X),Y |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x06 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: ADC ($44),Y |}]
 ;;
 
 let%expect_test "testing ADC INDIRECTINDEXED (0x71) page cross" =
@@ -7517,7 +7497,7 @@ let%expect_test "testing ADC INDIRECTINDEXED (0x71) page cross" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x06 x: 0x02 y: 0xFF sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: ADC ($%02X),Y |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x06 x: 0x02 y: 0xFF sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: ADC ($44),Y |}]
 ;;
 
 let%expect_test "testing ADC INDIRECTINDEXED (0x71) Incoming carry" =
@@ -7535,7 +7515,7 @@ let%expect_test "testing ADC INDIRECTINDEXED (0x71) Incoming carry" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x07 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: ADC ($%02X),Y |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x07 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: ADC ($44),Y |}]
 ;;
 
 let%expect_test "testing ADC INDIRECTINDEXED (0x71) Generating Carry" =
@@ -7553,7 +7533,7 @@ let%expect_test "testing ADC INDIRECTINDEXED (0x71) Generating Carry" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x00 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZC pc: 0x1002 inst: ADC ($%02X),Y |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x00 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZC pc: 0x1002 inst: ADC ($44),Y |}]
 ;;
 
 let%expect_test "testing ADC INDIRECTINDEXED (0x71) Pos+Pos=Neg" =
@@ -7571,7 +7551,7 @@ let%expect_test "testing ADC INDIRECTINDEXED (0x71) Pos+Pos=Neg" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x80 x: 0x02 y: 0x03 sp: 0xFD sr: NV-bdizc pc: 0x1002 inst: ADC ($%02X),Y |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x80 x: 0x02 y: 0x03 sp: 0xFD sr: NV-bdizc pc: 0x1002 inst: ADC ($44),Y |}]
 ;;
 
 let%expect_test "testing ADC INDIRECTINDEXED (0x71) Pos+Neg" =
@@ -7589,7 +7569,7 @@ let%expect_test "testing ADC INDIRECTINDEXED (0x71) Pos+Neg" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0xFF x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1002 inst: ADC ($%02X),Y |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0xFF x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1002 inst: ADC ($44),Y |}]
 ;;
 
 let%expect_test "testing ADC INDIRECTINDEXED (0x71) Neg+Neg=Pos" =
@@ -7607,7 +7587,7 @@ let%expect_test "testing ADC INDIRECTINDEXED (0x71) Neg+Neg=Pos" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x7F x: 0x02 y: 0x03 sp: 0xFD sr: nV-bdizC pc: 0x1002 inst: ADC ($%02X),Y |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x7F x: 0x02 y: 0x03 sp: 0xFD sr: nV-bdizC pc: 0x1002 inst: ADC ($44),Y |}]
 ;;
 
 let%expect_test "testing STA INDIRECTINDEXED (0x91)" =
@@ -7627,8 +7607,7 @@ let%expect_test "testing STA INDIRECTINDEXED (0x91)" =
   dump_last_execution_mem executions [ 0xC013 ];
   [%expect
     {|
-    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: STA ($%02X),Y
-
+    ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: STA ($44),Y
     Mem: 0xC013 : 0x01
     |}]
 ;;
@@ -7648,7 +7627,7 @@ let%expect_test "testing CMP INDIRECTINDEXED (0xD1) Equality" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x42 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZC pc: 0x1002 inst: CMP ($%02X),Y |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x42 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZC pc: 0x1002 inst: CMP ($44),Y |}]
 ;;
 
 let%expect_test "testing CMP INDIRECTINDEXED (0xD1) page cross" =
@@ -7666,7 +7645,7 @@ let%expect_test "testing CMP INDIRECTINDEXED (0xD1) page cross" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x42 x: 0x02 y: 0xFF sp: 0xFD sr: nv-bdiZC pc: 0x1002 inst: CMP ($%02X),Y |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x42 x: 0x02 y: 0xFF sp: 0xFD sr: nv-bdiZC pc: 0x1002 inst: CMP ($44),Y |}]
 ;;
 
 let%expect_test "testing CMP INDIRECTINDEXED (0xD1) Greater Than" =
@@ -7684,7 +7663,7 @@ let%expect_test "testing CMP INDIRECTINDEXED (0xD1) Greater Than" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0xFF x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizC pc: 0x1002 inst: CMP ($%02X),Y |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0xFF x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizC pc: 0x1002 inst: CMP ($44),Y |}]
 ;;
 
 let%expect_test "testing CMP INDIRECTINDEXED (0xD1) Less Than" =
@@ -7702,7 +7681,7 @@ let%expect_test "testing CMP INDIRECTINDEXED (0xD1) Less Than" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x02 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1002 inst: CMP ($%02X),Y |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x02 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1002 inst: CMP ($44),Y |}]
 ;;
 
 let%expect_test "testing SBC INDIRECTINDEXED (0xF1) No Borrow" =
@@ -7720,7 +7699,7 @@ let%expect_test "testing SBC INDIRECTINDEXED (0xF1) No Borrow" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x03 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizC pc: 0x1002 inst: SBC ($%02X),Y |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x03 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizC pc: 0x1002 inst: SBC ($44),Y |}]
 ;;
 
 let%expect_test "testing SBC INDIRECTINDEXED (0xF1) Page Cross" =
@@ -7738,7 +7717,7 @@ let%expect_test "testing SBC INDIRECTINDEXED (0xF1) Page Cross" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x03 x: 0x02 y: 0xFF sp: 0xFD sr: nv-bdizC pc: 0x1002 inst: SBC ($%02X),Y |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x03 x: 0x02 y: 0xFF sp: 0xFD sr: nv-bdizC pc: 0x1002 inst: SBC ($44),Y |}]
 ;;
 
 let%expect_test "testing SBC INDIRECTINDEXED (0xF1) With  Borrow" =
@@ -7756,7 +7735,7 @@ let%expect_test "testing SBC INDIRECTINDEXED (0xF1) With  Borrow" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x02 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizC pc: 0x1002 inst: SBC ($%02X),Y |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x02 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizC pc: 0x1002 inst: SBC ($44),Y |}]
 ;;
 
 let%expect_test "testing SBC INDIRECTINDEXED (0xF1) Underflow" =
@@ -7774,7 +7753,7 @@ let%expect_test "testing SBC INDIRECTINDEXED (0xF1) Underflow" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0xFF x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1002 inst: SBC ($%02X),Y |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0xFF x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1002 inst: SBC ($44),Y |}]
 ;;
 
 let%expect_test "testing SBC INDIRECTINDEXED (0xF1) Overflow" =
@@ -7792,7 +7771,7 @@ let%expect_test "testing SBC INDIRECTINDEXED (0xF1) Overflow" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x7F x: 0x02 y: 0x03 sp: 0xFD sr: nV-bdizC pc: 0x1002 inst: SBC ($%02X),Y |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x7F x: 0x02 y: 0x03 sp: 0xFD sr: nV-bdizC pc: 0x1002 inst: SBC ($44),Y |}]
 ;;
 
 let%expect_test "testing BCC IMMEDIATE (0x90) branch not taken" =
@@ -7807,7 +7786,7 @@ let%expect_test "testing BCC IMMEDIATE (0x90) branch not taken" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizC pc: 0x1002 inst: BCC $%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizC pc: 0x1002 inst: BCC $03 |}]
 ;;
 
 let%expect_test "testing BCC IMMEDIATE (0x90) branch taken same page pos" =
@@ -7822,7 +7801,7 @@ let%expect_test "testing BCC IMMEDIATE (0x90) branch taken same page pos" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1005 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1005 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1005 inst: BCC $%02X |}]
+    {| ab: 0x1005 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1005 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1005 inst: BCC $03 |}]
 ;;
 
 let%expect_test "testing BCC IMMEDIATE (0x90) branch taken same page neg" =
@@ -7837,7 +7816,7 @@ let%expect_test "testing BCC IMMEDIATE (0x90) branch taken same page neg" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: BCC $%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: BCC $F0 |}]
 ;;
 
 let%expect_test "testing BCC IMMEDIATE (0x90) branch taken pos page cross" =
@@ -7852,7 +7831,7 @@ let%expect_test "testing BCC IMMEDIATE (0x90) branch taken pos page cross" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1105 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1105 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1105 inst: BCC $%02X |}]
+    {| ab: 0x1205 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1205 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1205 inst: BCC $05 |}]
 ;;
 
 let%expect_test "testing BCC IMMEDIATE (0x90) branch taken neg page cross" =
@@ -7867,7 +7846,7 @@ let%expect_test "testing BCC IMMEDIATE (0x90) branch taken neg page cross" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x10FD db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x10FD data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x10FD inst: BCC $%02X |}]
+    {| ab: 0x0FFD db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x0FFD data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x0FFD inst: BCC $FA |}]
 ;;
 
 let%expect_test "testing BCS IMMEDIATE (0xB0) branch not taken" =
@@ -7882,7 +7861,7 @@ let%expect_test "testing BCS IMMEDIATE (0xB0) branch not taken" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: BCS $%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: BCS $03 |}]
 ;;
 
 let%expect_test "testing BCS IMMEDIATE (0xB0) branch taken same page pos" =
@@ -7897,7 +7876,7 @@ let%expect_test "testing BCS IMMEDIATE (0xB0) branch taken same page pos" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1005 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1005 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizC pc: 0x1005 inst: BCS $%02X |}]
+    {| ab: 0x1005 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1005 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizC pc: 0x1005 inst: BCS $03 |}]
 ;;
 
 let%expect_test "testing BCS IMMEDIATE (0xB0) branch taken same page neg" =
@@ -7912,7 +7891,7 @@ let%expect_test "testing BCS IMMEDIATE (0xB0) branch taken same page neg" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizC pc: 0x1002 inst: BCS $%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizC pc: 0x1002 inst: BCS $F0 |}]
 ;;
 
 let%expect_test "testing BCS IMMEDIATE (0xB0) branch taken pos page cross" =
@@ -7927,7 +7906,7 @@ let%expect_test "testing BCS IMMEDIATE (0xB0) branch taken pos page cross" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1105 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1105 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizC pc: 0x1105 inst: BCS $%02X |}]
+    {| ab: 0x1205 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1205 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizC pc: 0x1205 inst: BCS $05 |}]
 ;;
 
 let%expect_test "testing BCS IMMEDIATE (0xB0) branch taken neg page cross" =
@@ -7942,7 +7921,7 @@ let%expect_test "testing BCS IMMEDIATE (0xB0) branch taken neg page cross" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x10FD db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x10FD data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizC pc: 0x10FD inst: BCS $%02X |}]
+    {| ab: 0x0FFD db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x0FFD data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizC pc: 0x0FFD inst: BCS $FA |}]
 ;;
 
 let%expect_test "testing BNE IMMEDIATE (0xD0) branch not taken" =
@@ -7957,7 +7936,7 @@ let%expect_test "testing BNE IMMEDIATE (0xD0) branch not taken" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZc pc: 0x1002 inst: BNE $%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZc pc: 0x1002 inst: BNE $03 |}]
 ;;
 
 let%expect_test "testing BNE IMMEDIATE (0xD0) branch taken same page pos" =
@@ -7972,7 +7951,7 @@ let%expect_test "testing BNE IMMEDIATE (0xD0) branch taken same page pos" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1005 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1005 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1005 inst: BNE $%02X |}]
+    {| ab: 0x1005 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1005 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1005 inst: BNE $03 |}]
 ;;
 
 let%expect_test "testing BNE IMMEDIATE (0xD0) branch taken same page neg" =
@@ -7987,7 +7966,7 @@ let%expect_test "testing BNE IMMEDIATE (0xD0) branch taken same page neg" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: BNE $%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: BNE $F0 |}]
 ;;
 
 let%expect_test "testing BNE IMMEDIATE (0xD0) branch taken pos page cross" =
@@ -8002,7 +7981,7 @@ let%expect_test "testing BNE IMMEDIATE (0xD0) branch taken pos page cross" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1105 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1105 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1105 inst: BNE $%02X |}]
+    {| ab: 0x1205 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1205 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1205 inst: BNE $05 |}]
 ;;
 
 let%expect_test "testing BNE IMMEDIATE (0xD0) branch taken neg page cross" =
@@ -8017,7 +7996,7 @@ let%expect_test "testing BNE IMMEDIATE (0xD0) branch taken neg page cross" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x10FD db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x10FD data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x10FD inst: BNE $%02X |}]
+    {| ab: 0x0FFD db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x0FFD data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x0FFD inst: BNE $FA |}]
 ;;
 
 let%expect_test "testing BEQ IMMEDIATE (0xF0) branch not taken" =
@@ -8032,7 +8011,7 @@ let%expect_test "testing BEQ IMMEDIATE (0xF0) branch not taken" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: BEQ $%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: BEQ $03 |}]
 ;;
 
 let%expect_test "testing BEQ IMMEDIATE (0xF0) branch taken same page pos" =
@@ -8047,7 +8026,7 @@ let%expect_test "testing BEQ IMMEDIATE (0xF0) branch taken same page pos" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1005 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1005 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZc pc: 0x1005 inst: BEQ $%02X |}]
+    {| ab: 0x1005 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1005 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZc pc: 0x1005 inst: BEQ $03 |}]
 ;;
 
 let%expect_test "testing BEQ IMMEDIATE (0xF0) branch taken same page neg" =
@@ -8062,7 +8041,7 @@ let%expect_test "testing BEQ IMMEDIATE (0xF0) branch taken same page neg" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZc pc: 0x1002 inst: BEQ $%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZc pc: 0x1002 inst: BEQ $F0 |}]
 ;;
 
 let%expect_test "testing BEQ IMMEDIATE (0xF0) branch taken pos page cross" =
@@ -8077,7 +8056,7 @@ let%expect_test "testing BEQ IMMEDIATE (0xF0) branch taken pos page cross" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1105 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1105 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZc pc: 0x1105 inst: BEQ $%02X |}]
+    {| ab: 0x1205 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1205 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZc pc: 0x1205 inst: BEQ $05 |}]
 ;;
 
 let%expect_test "testing BEQ IMMEDIATE (0xF0) branch taken neg page cross" =
@@ -8092,7 +8071,7 @@ let%expect_test "testing BEQ IMMEDIATE (0xF0) branch taken neg page cross" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x10FD db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x10FD data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZc pc: 0x10FD inst: BEQ $%02X |}]
+    {| ab: 0x0FFD db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x0FFD data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZc pc: 0x0FFD inst: BEQ $FA |}]
 ;;
 
 let%expect_test "testing BPL IMMEDIATE (0x10) branch not taken" =
@@ -8107,7 +8086,7 @@ let%expect_test "testing BPL IMMEDIATE (0x10) branch not taken" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1002 inst: BPL $%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1002 inst: BPL $03 |}]
 ;;
 
 let%expect_test "testing BPL IMMEDIATE (0x10) branch taken same page pos" =
@@ -8122,7 +8101,7 @@ let%expect_test "testing BPL IMMEDIATE (0x10) branch taken same page pos" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1005 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1005 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1005 inst: BPL $%02X |}]
+    {| ab: 0x1005 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1005 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1005 inst: BPL $03 |}]
 ;;
 
 let%expect_test "testing BPL IMMEDIATE (0x10) branch taken same page neg" =
@@ -8137,7 +8116,7 @@ let%expect_test "testing BPL IMMEDIATE (0x10) branch taken same page neg" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: BPL $%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: BPL $F0 |}]
 ;;
 
 let%expect_test "testing BPL IMMEDIATE (0x10) branch taken pos page cross" =
@@ -8152,7 +8131,7 @@ let%expect_test "testing BPL IMMEDIATE (0x10) branch taken pos page cross" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1105 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1105 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1105 inst: BPL $%02X |}]
+    {| ab: 0x1205 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1205 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1205 inst: BPL $05 |}]
 ;;
 
 let%expect_test "testing BPL IMMEDIATE (0x10) branch taken neg page cross" =
@@ -8167,7 +8146,7 @@ let%expect_test "testing BPL IMMEDIATE (0x10) branch taken neg page cross" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x10FD db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x10FD data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x10FD inst: BPL $%02X |}]
+    {| ab: 0x0FFD db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x0FFD data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x0FFD inst: BPL $FA |}]
 ;;
 
 let%expect_test "testing BMI IMMEDIATE (0x30) branch not taken" =
@@ -8182,7 +8161,7 @@ let%expect_test "testing BMI IMMEDIATE (0x30) branch not taken" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: BMI $%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: BMI $03 |}]
 ;;
 
 let%expect_test "testing BMI IMMEDIATE (0x30) branch taken same page pos" =
@@ -8197,7 +8176,7 @@ let%expect_test "testing BMI IMMEDIATE (0x30) branch taken same page pos" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1005 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1005 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1005 inst: BMI $%02X |}]
+    {| ab: 0x1005 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1005 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1005 inst: BMI $03 |}]
 ;;
 
 let%expect_test "testing BMI IMMEDIATE (0x30) branch taken same page neg" =
@@ -8212,7 +8191,7 @@ let%expect_test "testing BMI IMMEDIATE (0x30) branch taken same page neg" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1002 inst: BMI $%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1002 inst: BMI $F0 |}]
 ;;
 
 let%expect_test "testing BMI IMMEDIATE (0x30) branch taken pos page cross" =
@@ -8227,7 +8206,7 @@ let%expect_test "testing BMI IMMEDIATE (0x30) branch taken pos page cross" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1105 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1105 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1105 inst: BMI $%02X |}]
+    {| ab: 0x1205 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1205 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1205 inst: BMI $05 |}]
 ;;
 
 let%expect_test "testing BMI IMMEDIATE (0x30) branch taken neg page cross" =
@@ -8242,7 +8221,7 @@ let%expect_test "testing BMI IMMEDIATE (0x30) branch taken neg page cross" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x10FD db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x10FD data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x10FD inst: BMI $%02X |}]
+    {| ab: 0x0FFD db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x0FFD data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x0FFD inst: BMI $FA |}]
 ;;
 
 let%expect_test "testing BVC IMMEDIATE (0x50) branch not taken" =
@@ -8257,7 +8236,7 @@ let%expect_test "testing BVC IMMEDIATE (0x50) branch not taken" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nV-bdizc pc: 0x1002 inst: BVC $%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nV-bdizc pc: 0x1002 inst: BVC $03 |}]
 ;;
 
 let%expect_test "testing BVC IMMEDIATE (0x50) branch taken same page pos" =
@@ -8272,7 +8251,7 @@ let%expect_test "testing BVC IMMEDIATE (0x50) branch taken same page pos" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1005 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1005 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1005 inst: BVC $%02X |}]
+    {| ab: 0x1005 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1005 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1005 inst: BVC $03 |}]
 ;;
 
 let%expect_test "testing BVC IMMEDIATE (0x50) branch taken same page neg" =
@@ -8287,7 +8266,7 @@ let%expect_test "testing BVC IMMEDIATE (0x50) branch taken same page neg" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: BVC $%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: BVC $F0 |}]
 ;;
 
 let%expect_test "testing BVC IMMEDIATE (0x50) branch taken pos page cross" =
@@ -8302,7 +8281,7 @@ let%expect_test "testing BVC IMMEDIATE (0x50) branch taken pos page cross" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1105 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1105 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1105 inst: BVC $%02X |}]
+    {| ab: 0x1205 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1205 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1205 inst: BVC $05 |}]
 ;;
 
 let%expect_test "testing BVC IMMEDIATE (0x50) branch taken neg page cross" =
@@ -8317,7 +8296,7 @@ let%expect_test "testing BVC IMMEDIATE (0x50) branch taken neg page cross" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x10FD db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x10FD data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x10FD inst: BVC $%02X |}]
+    {| ab: 0x0FFD db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x0FFD data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x0FFD inst: BVC $FA |}]
 ;;
 
 let%expect_test "testing BVS IMMEDIATE (0x70) branch not taken" =
@@ -8332,7 +8311,7 @@ let%expect_test "testing BVS IMMEDIATE (0x70) branch not taken" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: BVS $%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: BVS $03 |}]
 ;;
 
 let%expect_test "testing BVS IMMEDIATE (0x70) branch taken same page pos" =
@@ -8347,7 +8326,7 @@ let%expect_test "testing BVS IMMEDIATE (0x70) branch taken same page pos" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1005 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1005 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nV-bdizc pc: 0x1005 inst: BVS $%02X |}]
+    {| ab: 0x1005 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1005 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nV-bdizc pc: 0x1005 inst: BVS $03 |}]
 ;;
 
 let%expect_test "testing BVS IMMEDIATE (0x70) branch taken same page neg" =
@@ -8362,7 +8341,7 @@ let%expect_test "testing BVS IMMEDIATE (0x70) branch taken same page neg" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nV-bdizc pc: 0x1002 inst: BVS $%02X |}]
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nV-bdizc pc: 0x1002 inst: BVS $F0 |}]
 ;;
 
 let%expect_test "testing BVS IMMEDIATE (0x70) branch taken pos page cross" =
@@ -8377,7 +8356,7 @@ let%expect_test "testing BVS IMMEDIATE (0x70) branch taken pos page cross" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1105 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1105 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nV-bdizc pc: 0x1105 inst: BVS $%02X |}]
+    {| ab: 0x1205 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1205 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nV-bdizc pc: 0x1205 inst: BVS $05 |}]
 ;;
 
 let%expect_test "testing BVS IMMEDIATE (0x70) branch taken neg page cross" =
@@ -8392,7 +8371,7 @@ let%expect_test "testing BVS IMMEDIATE (0x70) branch taken neg page cross" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x10FD db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x10FD data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nV-bdizc pc: 0x10FD inst: BVS $%02X |}]
+    {| ab: 0x0FFD db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x0FFD data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nV-bdizc pc: 0x0FFD inst: BVS $FA |}]
 ;;
 
 let%expect_test "testing JSR ABSOLUTE (0x20)" =
@@ -8410,14 +8389,12 @@ let%expect_test "testing JSR ABSOLUTE (0x20)" =
   dump_last_execution_mem executions [ 0x1FB; 0x1FC; 0x1FD; 0x1FE; 0x1FF ];
   [%expect
     {|
-    ab: 0x4269 db: 0xEA phy2: 0 cycle: 1 rw: true address: 0x4269 data: 0xEA a: 0x01 x: 0x02 y: 0x03 sp: 0xFB sr: nv-bdizc pc: 0x4269 inst: JSR $%04X
-
+    ab: 0x4269 db: 0xEA phy2: 0 cycle: 1 rw:  true address: 0x4269 data: 0xEA a: 0x01 x: 0x02 y: 0x03 sp: 0xFB sr: nv-bdizc pc: 0x4269 inst: JSR $4269
     Mem: 0x01FB : 0xFF
     Mem: 0x01FC : 0x02
     Mem: 0x01FD : 0x10
     Mem: 0x01FE : 0xFF
     Mem: 0x01FF : 0xFF
-
     |}]
 ;;
 
@@ -8440,14 +8417,12 @@ let%expect_test "testing RTS IMPLIED (0x60)" =
   dump_last_execution_mem executions [ 0x1FB; 0x1FC; 0x1FD; 0x1FE; 0x1FF ];
   [%expect
     {|
-    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: RTS
-
+    ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1003 inst: RTS
     Mem: 0x01FB : 0xFF
     Mem: 0x01FC : 0x02
     Mem: 0x01FD : 0x10
     Mem: 0x01FE : 0x81
     Mem: 0x01FF : 0x82
-
     |}]
 ;;
 
@@ -8470,14 +8445,12 @@ let%expect_test "testing RTI IMPLIED (0x40)" =
   dump_last_execution_mem executions [ 0x1FB; 0x1FC; 0x1FD; 0x1FE; 0x1FF ];
   [%expect
     {|
-    ab: 0x2002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x2002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nV-bdizC pc: 0x2002 inst: RTI
-
+    ab: 0x2002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x2002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nV-bdizC pc: 0x2002 inst: RTI
     Mem: 0x01FB : 0x41
     Mem: 0x01FC : 0x02
     Mem: 0x01FD : 0x20
     Mem: 0x01FE : 0x81
     Mem: 0x01FF : 0x82
-
     |}]
 ;;
 
@@ -8500,14 +8473,12 @@ let%expect_test "testing RTI IMPLIED (0x40) should clear break flag" =
   dump_last_execution_mem executions [ 0x1FB; 0x1FC; 0x1FD; 0x1FE; 0x1FF ];
   [%expect
     {|
-    ab: 0x2002 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x2002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nV-bdizC pc: 0x2002 inst: RTI
-
+    ab: 0x2002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x2002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nV-bdizC pc: 0x2002 inst: RTI
     Mem: 0x01FB : 0x51
     Mem: 0x01FC : 0x02
     Mem: 0x01FD : 0x20
     Mem: 0x01FE : 0x81
     Mem: 0x01FF : 0x82
-
     |}]
 ;;
 
@@ -8524,11 +8495,11 @@ let%expect_test "testing JMP INDIRECT Normal (0x6C)" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x80C4 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0x80C4 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: nv-bdizc pc: 0x80C4 inst: JMP ($%04X) |}]
+    {| ab: 0x80C4 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x80C4 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFF sr: nv-bdizc pc: 0x80C4 inst: JMP ($6944) |}]
 ;;
 
 let%expect_test "testing BRK IMPLIED (0x00)" =
-  let cycles = 8 in
+  let cycles = 7 in
   let pgm = [ 0x00 ] in
   let computer = init_test_computer 0x1000 pgm in
   let computer =
@@ -8548,13 +8519,233 @@ let%expect_test "testing BRK IMPLIED (0x00)" =
   dump_last_execution_mem executions [ 0x1FB; 0x1FC; 0x1FD; 0x1FE; 0x1FF ];
   [%expect
     {|
-    ab: 0xC010 db: 0xFF phy2: 0 cycle: 1 rw: true address: 0xC010 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFB sr: nv-BdIzC pc: 0xC010 inst: BRK
-
+    ab: 0xC010 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0xC010 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFB sr: nv-BdIzC pc: 0xC010 inst: BRK
     Mem: 0x01FB : 0x85
-    Mem: 0x01FC : 0x15
+    Mem: 0x01FC : 0x35
     Mem: 0x01FD : 0x02
     Mem: 0x01FE : 0x10
     Mem: 0x01FF : 0x81
+    |}]
+;;
 
+let%expect_test "testing IRQ masked" =
+  let cycles = 7 in
+  let pgm = [ 0xEA ] in
+  let computer = init_test_computer 0x1000 pgm in
+  let computer =
+    { computer with
+      cpu =
+        { computer.cpu with
+          irq = true
+        ; a = 0x01
+        ; x = 0x02
+        ; y = 0x03
+        ; sp = 0xFE
+        ; sr = 0b0000_0100
+        }
+    }
+  in
+  computer.banks.(0x01FB) <- 0x85;
+  computer.banks.(0x01FC) <- 0x84;
+  computer.banks.(0x01FD) <- 0x83;
+  computer.banks.(0x01FE) <- 0x82;
+  computer.banks.(0x01FF) <- 0x81;
+  computer.banks.(0xFFFA) <- 0xFA;
+  computer.banks.(0xFFFB) <- 0xC0;
+  computer.banks.(0xFFFC) <- 0xFC;
+  computer.banks.(0xFFFD) <- 0xC0;
+  computer.banks.(0xFFFE) <- 0xFE;
+  computer.banks.(0xFFFF) <- 0xC0;
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  dump_last_execution_mem executions [ 0x1FB; 0x1FC; 0x1FD; 0x1FE; 0x1FF ];
+  [%expect
+    {|
+    ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1001 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFE sr: nv-bdIzc pc: 0x1001 inst: NOP
+    Mem: 0x01FB : 0x85
+    Mem: 0x01FC : 0x84
+    Mem: 0x01FD : 0x83
+    Mem: 0x01FE : 0x82
+    Mem: 0x01FF : 0x81
+    |}]
+;;
+
+let%expect_test "testing IRQ unmasked" =
+  let cycles = 10 in
+  let pgm = [ 0xEA ] in
+  let computer = init_test_computer 0x1000 pgm in
+  let computer =
+    { computer with
+      cpu =
+        { computer.cpu with
+          irq = true
+        ; a = 0x01
+        ; x = 0x02
+        ; y = 0x03
+        ; sp = 0xFE
+        ; sr = 0b0000_0000
+        }
+    }
+  in
+  computer.banks.(0x01FB) <- 0x85;
+  computer.banks.(0x01FC) <- 0x84;
+  computer.banks.(0x01FD) <- 0x83;
+  computer.banks.(0x01FE) <- 0x82;
+  computer.banks.(0x01FF) <- 0x81;
+  (* NMI *)
+  computer.banks.(0xFFFA) <- 0xFA;
+  computer.banks.(0xFFFB) <- 0xC0;
+  (* RESET *)
+  computer.banks.(0xFFFC) <- 0xFC;
+  computer.banks.(0xFFFD) <- 0xC0;
+  (* IRQ and BRK *)
+  computer.banks.(0xFFFE) <- 0xFE;
+  computer.banks.(0xFFFF) <- 0xC0;
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  dump_last_execution_mem executions [ 0x1FB; 0x1FC; 0x1FD; 0x1FE; 0x1FF ];
+  [%expect
+    {|
+    ab: 0xC0FE db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0xC0FE data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFB sr: nv-bdIzc pc: 0xC0FE inst: BRK
+    Mem: 0x01FB : 0x85
+    Mem: 0x01FC : 0x04
+    Mem: 0x01FD : 0x02
+    Mem: 0x01FE : 0x10
+    Mem: 0x01FF : 0x81
+    |}]
+;;
+
+let%expect_test "testing NMI unmasked" =
+  let cycles = 10 in
+  let pgm = [ 0xEA ] in
+  let computer = init_test_computer 0x1000 pgm in
+  let computer =
+    { computer with
+      cpu =
+        { computer.cpu with
+          nmi = true
+        ; a = 0x01
+        ; x = 0x02
+        ; y = 0x03
+        ; sp = 0xFE
+        ; sr = 0b0000_0000
+        }
+    }
+  in
+  computer.banks.(0x01FB) <- 0x85;
+  computer.banks.(0x01FC) <- 0x84;
+  computer.banks.(0x01FD) <- 0x83;
+  computer.banks.(0x01FE) <- 0x82;
+  computer.banks.(0x01FF) <- 0x81;
+  (* NMI *)
+  computer.banks.(0xFFFA) <- 0xFA;
+  computer.banks.(0xFFFB) <- 0xC0;
+  (* RESET *)
+  computer.banks.(0xFFFC) <- 0xFC;
+  computer.banks.(0xFFFD) <- 0xC0;
+  (* IRQ and BRK *)
+  computer.banks.(0xFFFE) <- 0xFE;
+  computer.banks.(0xFFFF) <- 0xC0;
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  dump_last_execution_mem executions [ 0x1FB; 0x1FC; 0x1FD; 0x1FE; 0x1FF ];
+  [%expect
+    {|
+    ab: 0xC0FA db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0xC0FA data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFB sr: nv-bdizc pc: 0xC0FA inst: BRK
+    Mem: 0x01FB : 0x85
+    Mem: 0x01FC : 0x00
+    Mem: 0x01FD : 0x02
+    Mem: 0x01FE : 0x10
+    Mem: 0x01FF : 0x81
+    |}]
+;;
+
+let%expect_test "testing NMI masked" =
+  let cycles = 10 in
+  let pgm = [ 0xEA ] in
+  let computer = init_test_computer 0x1000 pgm in
+  let computer =
+    { computer with
+      cpu =
+        { computer.cpu with
+          nmi = true
+        ; a = 0x01
+        ; x = 0x02
+        ; y = 0x03
+        ; sp = 0xFE
+        ; sr = 0b0000_0100
+        }
+    }
+  in
+  computer.banks.(0x01FB) <- 0x85;
+  computer.banks.(0x01FC) <- 0x84;
+  computer.banks.(0x01FD) <- 0x83;
+  computer.banks.(0x01FE) <- 0x82;
+  computer.banks.(0x01FF) <- 0x81;
+  (* NMI *)
+  computer.banks.(0xFFFA) <- 0xFA;
+  computer.banks.(0xFFFB) <- 0xC0;
+  (* RESET *)
+  computer.banks.(0xFFFC) <- 0xFC;
+  computer.banks.(0xFFFD) <- 0xC0;
+  (* IRQ and BRK *)
+  computer.banks.(0xFFFE) <- 0xFE;
+  computer.banks.(0xFFFF) <- 0xC0;
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  dump_last_execution_mem executions [ 0x1FB; 0x1FC; 0x1FD; 0x1FE; 0x1FF ];
+  [%expect
+    {|
+    ab: 0xC0FA db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0xC0FA data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFB sr: nv-bdIzc pc: 0xC0FA inst: BRK
+    Mem: 0x01FB : 0x85
+    Mem: 0x01FC : 0x04
+    Mem: 0x01FD : 0x02
+    Mem: 0x01FE : 0x10
+    Mem: 0x01FF : 0x81
+    |}]
+;;
+
+let%expect_test "testing RESET unmasked" =
+  let cycles = 10 in
+  let pgm = [ 0xEA ] in
+  let computer = init_test_computer 0x1000 pgm in
+  let computer =
+    { computer with
+      cpu =
+        { computer.cpu with
+          reset = true
+        ; a = 0x01
+        ; x = 0x02
+        ; y = 0x03
+        ; sp = 0x00
+        ; sr = 0b0000_0000
+        }
+    }
+  in
+  computer.banks.(0x01FB) <- 0x85;
+  computer.banks.(0x01FC) <- 0x84;
+  computer.banks.(0x01FD) <- 0x83;
+  computer.banks.(0x01FE) <- 0x82;
+  computer.banks.(0x01FF) <- 0x81;
+  (* NMI *)
+  computer.banks.(0xFFFA) <- 0xFA;
+  computer.banks.(0xFFFB) <- 0xC0;
+  (* RESET *)
+  computer.banks.(0xFFFC) <- 0xFC;
+  computer.banks.(0xFFFD) <- 0xC0;
+  (* IRQ and BRK *)
+  computer.banks.(0xFFFE) <- 0xFE;
+  computer.banks.(0xFFFF) <- 0xC0;
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  dump_last_execution_mem executions [ 0x1FB; 0x1FC; 0x1FD; 0x1FE; 0x1FF ];
+  [%expect
+    {|
+    ab: 0xC0FC db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0xC0FC data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0xC0FC inst: BRK
+    Mem: 0x01FB : 0x85
+    Mem: 0x01FC : 0x84
+    Mem: 0x01FD : 0x83
+    Mem: 0x01FE : 0x82
+    Mem: 0x01FF : 0x81
     |}]
 ;;

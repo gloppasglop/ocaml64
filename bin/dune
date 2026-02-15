@@ -1,6 +1,23 @@
-(executable
- (name main)
- (public_name ocaml64)
+; (executable
+;  (name main)
+;  (public_name ocaml64)
+;  (preprocess
+;   (pps ppx_sexp_conv))
+;  (libraries base sexplib stdio ocaml64))
+
+(executables
+ (names main tui)
+ (package ocaml64) ; <--- Add this line
+ (public_names main tui) ; <--- Map names to public commands
  (preprocess
   (pps ppx_sexp_conv))
- (libraries base sexplib stdio ocaml64))
+ (libraries
+  base
+  sexplib
+  mosaic
+  mosaic.ui
+  matrix.charts
+  matrix.ansi
+  matrix.grid
+  stdio
+  ocaml64))
