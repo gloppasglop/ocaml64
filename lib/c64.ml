@@ -1818,7 +1818,7 @@ let%expect_test "testing ORA ABSOLUTE (0x0D) non-zero negative" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x83 x: 0x00 y: 0x00 sp: 0xFF sr: Nv-bdizc pc: 0x1003 inst: ORA $%04X |}]
+    {| ab: 0x1003 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1003 data: 0xFF a: 0x83 x: 0x00 y: 0x00 sp: 0xFF sr: Nv-bdizc pc: 0x1003 inst: ORA $4469 |}]
 ;;
 
 let%expect_test "testing ORA ABSOLUTE (0x0D) zero" =
@@ -3517,7 +3517,7 @@ let%expect_test "testing PLP IMPLIED (0x28)" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1001 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFE sr: NV-bdiZC pc: 0x1001 inst: PLP |}]
+    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1001 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFE sr: NV-BdiZC pc: 0x1001 inst: PLP |}]
 ;;
 
 let%expect_test "testing LDA ZEROPAGEX (0xB5) non-zero positive" =
@@ -7774,7 +7774,7 @@ let%expect_test "testing SBC INDIRECTINDEXED (0xF1) Overflow" =
     {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x7F x: 0x02 y: 0x03 sp: 0xFD sr: nV-bdizC pc: 0x1002 inst: SBC ($44),Y |}]
 ;;
 
-let%expect_test "testing BCC IMMEDIATE (0x90) branch not taken" =
+let%expect_test "testing BCC RELATIVE (0x90) branch not taken" =
   let cycles = 2 in
   let pgm = [ 0x90; 0x03 ] in
   let computer = init_test_computer 0x1000 pgm in
@@ -7789,7 +7789,7 @@ let%expect_test "testing BCC IMMEDIATE (0x90) branch not taken" =
     {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizC pc: 0x1002 inst: BCC $03 |}]
 ;;
 
-let%expect_test "testing BCC IMMEDIATE (0x90) branch taken same page pos" =
+let%expect_test "testing BCC RELATIVE (0x90) branch taken same page pos" =
   let cycles = 3 in
   let pgm = [ 0x90; 0x03 ] in
   let computer = init_test_computer 0x1000 pgm in
@@ -7804,7 +7804,7 @@ let%expect_test "testing BCC IMMEDIATE (0x90) branch taken same page pos" =
     {| ab: 0x1005 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1005 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1005 inst: BCC $03 |}]
 ;;
 
-let%expect_test "testing BCC IMMEDIATE (0x90) branch taken same page neg" =
+let%expect_test "testing BCC RELATIVE (0x90) branch taken same page neg" =
   let cycles = 3 in
   let pgm = [ 0x90; 0xF0 ] in
   let computer = init_test_computer 0x1010 pgm in
@@ -7819,7 +7819,7 @@ let%expect_test "testing BCC IMMEDIATE (0x90) branch taken same page neg" =
     {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: BCC $F0 |}]
 ;;
 
-let%expect_test "testing BCC IMMEDIATE (0x90) branch taken pos page cross" =
+let%expect_test "testing BCC RELATIVE (0x90) branch taken pos page cross" =
   let cycles = 4 in
   let pgm = [ 0x90; 0x05 ] in
   let computer = init_test_computer 0x10FE pgm in
@@ -7831,10 +7831,10 @@ let%expect_test "testing BCC IMMEDIATE (0x90) branch taken pos page cross" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1205 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1205 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1205 inst: BCC $05 |}]
+    {| ab: 0x1105 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1105 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1105 inst: BCC $05 |}]
 ;;
 
-let%expect_test "testing BCC IMMEDIATE (0x90) branch taken neg page cross" =
+let%expect_test "testing BCC RELATIVE (0x90) branch taken neg page cross" =
   let cycles = 4 in
   let pgm = [ 0x90; 0xFA ] in
   let computer = init_test_computer 0x1001 pgm in
@@ -7849,7 +7849,7 @@ let%expect_test "testing BCC IMMEDIATE (0x90) branch taken neg page cross" =
     {| ab: 0x0FFD db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x0FFD data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x0FFD inst: BCC $FA |}]
 ;;
 
-let%expect_test "testing BCS IMMEDIATE (0xB0) branch not taken" =
+let%expect_test "testing BCS RELATIVE (0xB0) branch not taken" =
   let cycles = 2 in
   let pgm = [ 0xB0; 0x03 ] in
   let computer = init_test_computer 0x1000 pgm in
@@ -7864,7 +7864,7 @@ let%expect_test "testing BCS IMMEDIATE (0xB0) branch not taken" =
     {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: BCS $03 |}]
 ;;
 
-let%expect_test "testing BCS IMMEDIATE (0xB0) branch taken same page pos" =
+let%expect_test "testing BCS RELATIVE (0xB0) branch taken same page pos" =
   let cycles = 3 in
   let pgm = [ 0xB0; 0x03 ] in
   let computer = init_test_computer 0x1000 pgm in
@@ -7879,7 +7879,7 @@ let%expect_test "testing BCS IMMEDIATE (0xB0) branch taken same page pos" =
     {| ab: 0x1005 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1005 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizC pc: 0x1005 inst: BCS $03 |}]
 ;;
 
-let%expect_test "testing BCS IMMEDIATE (0xB0) branch taken same page neg" =
+let%expect_test "testing BCS RELATIVE (0xB0) branch taken same page neg" =
   let cycles = 3 in
   let pgm = [ 0xB0; 0xF0 ] in
   let computer = init_test_computer 0x1010 pgm in
@@ -7894,7 +7894,7 @@ let%expect_test "testing BCS IMMEDIATE (0xB0) branch taken same page neg" =
     {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizC pc: 0x1002 inst: BCS $F0 |}]
 ;;
 
-let%expect_test "testing BCS IMMEDIATE (0xB0) branch taken pos page cross" =
+let%expect_test "testing BCS RELATIVE (0xB0) branch taken pos page cross" =
   let cycles = 4 in
   let pgm = [ 0xB0; 0x05 ] in
   let computer = init_test_computer 0x10FE pgm in
@@ -7906,10 +7906,10 @@ let%expect_test "testing BCS IMMEDIATE (0xB0) branch taken pos page cross" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1205 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1205 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizC pc: 0x1205 inst: BCS $05 |}]
+    {| ab: 0x1105 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1105 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizC pc: 0x1105 inst: BCS $05 |}]
 ;;
 
-let%expect_test "testing BCS IMMEDIATE (0xB0) branch taken neg page cross" =
+let%expect_test "testing BCS RELATIVE (0xB0) branch taken neg page cross" =
   let cycles = 4 in
   let pgm = [ 0xB0; 0xFA ] in
   let computer = init_test_computer 0x1001 pgm in
@@ -7924,7 +7924,7 @@ let%expect_test "testing BCS IMMEDIATE (0xB0) branch taken neg page cross" =
     {| ab: 0x0FFD db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x0FFD data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizC pc: 0x0FFD inst: BCS $FA |}]
 ;;
 
-let%expect_test "testing BNE IMMEDIATE (0xD0) branch not taken" =
+let%expect_test "testing BNE RELATIVE (0xD0) branch not taken" =
   let cycles = 2 in
   let pgm = [ 0xD0; 0x03 ] in
   let computer = init_test_computer 0x1000 pgm in
@@ -7939,7 +7939,7 @@ let%expect_test "testing BNE IMMEDIATE (0xD0) branch not taken" =
     {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZc pc: 0x1002 inst: BNE $03 |}]
 ;;
 
-let%expect_test "testing BNE IMMEDIATE (0xD0) branch taken same page pos" =
+let%expect_test "testing BNE RELATIVE (0xD0) branch taken same page pos" =
   let cycles = 3 in
   let pgm = [ 0xD0; 0x03 ] in
   let computer = init_test_computer 0x1000 pgm in
@@ -7954,7 +7954,7 @@ let%expect_test "testing BNE IMMEDIATE (0xD0) branch taken same page pos" =
     {| ab: 0x1005 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1005 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1005 inst: BNE $03 |}]
 ;;
 
-let%expect_test "testing BNE IMMEDIATE (0xD0) branch taken same page neg" =
+let%expect_test "testing BNE RELATIVE (0xD0) branch taken same page neg" =
   let cycles = 3 in
   let pgm = [ 0xD0; 0xF0 ] in
   let computer = init_test_computer 0x1010 pgm in
@@ -7969,7 +7969,7 @@ let%expect_test "testing BNE IMMEDIATE (0xD0) branch taken same page neg" =
     {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: BNE $F0 |}]
 ;;
 
-let%expect_test "testing BNE IMMEDIATE (0xD0) branch taken pos page cross" =
+let%expect_test "testing BNE RELATIVE (0xD0) branch taken pos page cross" =
   let cycles = 4 in
   let pgm = [ 0xD0; 0x05 ] in
   let computer = init_test_computer 0x10FE pgm in
@@ -7981,10 +7981,10 @@ let%expect_test "testing BNE IMMEDIATE (0xD0) branch taken pos page cross" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1205 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1205 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1205 inst: BNE $05 |}]
+    {| ab: 0x1105 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1105 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1105 inst: BNE $05 |}]
 ;;
 
-let%expect_test "testing BNE IMMEDIATE (0xD0) branch taken neg page cross" =
+let%expect_test "testing BNE RELATIVE (0xD0) branch taken neg page cross" =
   let cycles = 4 in
   let pgm = [ 0xD0; 0xFA ] in
   let computer = init_test_computer 0x1001 pgm in
@@ -7999,7 +7999,7 @@ let%expect_test "testing BNE IMMEDIATE (0xD0) branch taken neg page cross" =
     {| ab: 0x0FFD db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x0FFD data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x0FFD inst: BNE $FA |}]
 ;;
 
-let%expect_test "testing BEQ IMMEDIATE (0xF0) branch not taken" =
+let%expect_test "testing BEQ RELATIVE (0xF0) branch not taken" =
   let cycles = 2 in
   let pgm = [ 0xF0; 0x03 ] in
   let computer = init_test_computer 0x1000 pgm in
@@ -8014,7 +8014,7 @@ let%expect_test "testing BEQ IMMEDIATE (0xF0) branch not taken" =
     {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: BEQ $03 |}]
 ;;
 
-let%expect_test "testing BEQ IMMEDIATE (0xF0) branch taken same page pos" =
+let%expect_test "testing BEQ RELATIVE (0xF0) branch taken same page pos" =
   let cycles = 3 in
   let pgm = [ 0xF0; 0x03 ] in
   let computer = init_test_computer 0x1000 pgm in
@@ -8029,7 +8029,7 @@ let%expect_test "testing BEQ IMMEDIATE (0xF0) branch taken same page pos" =
     {| ab: 0x1005 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1005 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZc pc: 0x1005 inst: BEQ $03 |}]
 ;;
 
-let%expect_test "testing BEQ IMMEDIATE (0xF0) branch taken same page neg" =
+let%expect_test "testing BEQ RELATIVE (0xF0) branch taken same page neg" =
   let cycles = 3 in
   let pgm = [ 0xF0; 0xF0 ] in
   let computer = init_test_computer 0x1010 pgm in
@@ -8044,7 +8044,7 @@ let%expect_test "testing BEQ IMMEDIATE (0xF0) branch taken same page neg" =
     {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZc pc: 0x1002 inst: BEQ $F0 |}]
 ;;
 
-let%expect_test "testing BEQ IMMEDIATE (0xF0) branch taken pos page cross" =
+let%expect_test "testing BEQ RELATIVE (0xF0) branch taken pos page cross" =
   let cycles = 4 in
   let pgm = [ 0xF0; 0x05 ] in
   let computer = init_test_computer 0x10FE pgm in
@@ -8056,10 +8056,10 @@ let%expect_test "testing BEQ IMMEDIATE (0xF0) branch taken pos page cross" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1205 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1205 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZc pc: 0x1205 inst: BEQ $05 |}]
+    {| ab: 0x1105 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1105 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZc pc: 0x1105 inst: BEQ $05 |}]
 ;;
 
-let%expect_test "testing BEQ IMMEDIATE (0xF0) branch taken neg page cross" =
+let%expect_test "testing BEQ RELATIVE (0xF0) branch taken neg page cross" =
   let cycles = 4 in
   let pgm = [ 0xF0; 0xFA ] in
   let computer = init_test_computer 0x1001 pgm in
@@ -8074,7 +8074,7 @@ let%expect_test "testing BEQ IMMEDIATE (0xF0) branch taken neg page cross" =
     {| ab: 0x0FFD db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x0FFD data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdiZc pc: 0x0FFD inst: BEQ $FA |}]
 ;;
 
-let%expect_test "testing BPL IMMEDIATE (0x10) branch not taken" =
+let%expect_test "testing BPL RELATIVE (0x10) branch not taken" =
   let cycles = 2 in
   let pgm = [ 0x10; 0x03 ] in
   let computer = init_test_computer 0x1000 pgm in
@@ -8089,7 +8089,7 @@ let%expect_test "testing BPL IMMEDIATE (0x10) branch not taken" =
     {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1002 inst: BPL $03 |}]
 ;;
 
-let%expect_test "testing BPL IMMEDIATE (0x10) branch taken same page pos" =
+let%expect_test "testing BPL RELATIVE (0x10) branch taken same page pos" =
   let cycles = 3 in
   let pgm = [ 0x10; 0x03 ] in
   let computer = init_test_computer 0x1000 pgm in
@@ -8104,7 +8104,7 @@ let%expect_test "testing BPL IMMEDIATE (0x10) branch taken same page pos" =
     {| ab: 0x1005 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1005 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1005 inst: BPL $03 |}]
 ;;
 
-let%expect_test "testing BPL IMMEDIATE (0x10) branch taken same page neg" =
+let%expect_test "testing BPL RELATIVE (0x10) branch taken same page neg" =
   let cycles = 3 in
   let pgm = [ 0x10; 0xF0 ] in
   let computer = init_test_computer 0x1010 pgm in
@@ -8119,7 +8119,7 @@ let%expect_test "testing BPL IMMEDIATE (0x10) branch taken same page neg" =
     {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: BPL $F0 |}]
 ;;
 
-let%expect_test "testing BPL IMMEDIATE (0x10) branch taken pos page cross" =
+let%expect_test "testing BPL RELATIVE (0x10) branch taken pos page cross" =
   let cycles = 4 in
   let pgm = [ 0x10; 0x05 ] in
   let computer = init_test_computer 0x10FE pgm in
@@ -8131,10 +8131,10 @@ let%expect_test "testing BPL IMMEDIATE (0x10) branch taken pos page cross" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1205 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1205 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1205 inst: BPL $05 |}]
+    {| ab: 0x1105 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1105 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1105 inst: BPL $05 |}]
 ;;
 
-let%expect_test "testing BPL IMMEDIATE (0x10) branch taken neg page cross" =
+let%expect_test "testing BPL RELATIVE (0x10) branch taken neg page cross" =
   let cycles = 4 in
   let pgm = [ 0x10; 0xFA ] in
   let computer = init_test_computer 0x1001 pgm in
@@ -8149,7 +8149,7 @@ let%expect_test "testing BPL IMMEDIATE (0x10) branch taken neg page cross" =
     {| ab: 0x0FFD db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x0FFD data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x0FFD inst: BPL $FA |}]
 ;;
 
-let%expect_test "testing BMI IMMEDIATE (0x30) branch not taken" =
+let%expect_test "testing BMI RELATIVE (0x30) branch not taken" =
   let cycles = 2 in
   let pgm = [ 0x30; 0x03 ] in
   let computer = init_test_computer 0x1000 pgm in
@@ -8164,7 +8164,7 @@ let%expect_test "testing BMI IMMEDIATE (0x30) branch not taken" =
     {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: BMI $03 |}]
 ;;
 
-let%expect_test "testing BMI IMMEDIATE (0x30) branch taken same page pos" =
+let%expect_test "testing BMI RELATIVE (0x30) branch taken same page pos" =
   let cycles = 3 in
   let pgm = [ 0x30; 0x03 ] in
   let computer = init_test_computer 0x1000 pgm in
@@ -8179,7 +8179,7 @@ let%expect_test "testing BMI IMMEDIATE (0x30) branch taken same page pos" =
     {| ab: 0x1005 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1005 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1005 inst: BMI $03 |}]
 ;;
 
-let%expect_test "testing BMI IMMEDIATE (0x30) branch taken same page neg" =
+let%expect_test "testing BMI RELATIVE (0x30) branch taken same page neg" =
   let cycles = 3 in
   let pgm = [ 0x30; 0xF0 ] in
   let computer = init_test_computer 0x1010 pgm in
@@ -8194,7 +8194,7 @@ let%expect_test "testing BMI IMMEDIATE (0x30) branch taken same page neg" =
     {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1002 inst: BMI $F0 |}]
 ;;
 
-let%expect_test "testing BMI IMMEDIATE (0x30) branch taken pos page cross" =
+let%expect_test "testing BMI RELATIVE (0x30) branch taken pos page cross" =
   let cycles = 4 in
   let pgm = [ 0x30; 0x05 ] in
   let computer = init_test_computer 0x10FE pgm in
@@ -8206,10 +8206,10 @@ let%expect_test "testing BMI IMMEDIATE (0x30) branch taken pos page cross" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1205 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1205 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1205 inst: BMI $05 |}]
+    {| ab: 0x1105 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1105 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1105 inst: BMI $05 |}]
 ;;
 
-let%expect_test "testing BMI IMMEDIATE (0x30) branch taken neg page cross" =
+let%expect_test "testing BMI RELATIVE (0x30) branch taken neg page cross" =
   let cycles = 4 in
   let pgm = [ 0x30; 0xFA ] in
   let computer = init_test_computer 0x1001 pgm in
@@ -8224,7 +8224,7 @@ let%expect_test "testing BMI IMMEDIATE (0x30) branch taken neg page cross" =
     {| ab: 0x0FFD db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x0FFD data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x0FFD inst: BMI $FA |}]
 ;;
 
-let%expect_test "testing BVC IMMEDIATE (0x50) branch not taken" =
+let%expect_test "testing BVC RELATIVE (0x50) branch not taken" =
   let cycles = 2 in
   let pgm = [ 0x50; 0x03 ] in
   let computer = init_test_computer 0x1000 pgm in
@@ -8239,7 +8239,7 @@ let%expect_test "testing BVC IMMEDIATE (0x50) branch not taken" =
     {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nV-bdizc pc: 0x1002 inst: BVC $03 |}]
 ;;
 
-let%expect_test "testing BVC IMMEDIATE (0x50) branch taken same page pos" =
+let%expect_test "testing BVC RELATIVE (0x50) branch taken same page pos" =
   let cycles = 3 in
   let pgm = [ 0x50; 0x03 ] in
   let computer = init_test_computer 0x1000 pgm in
@@ -8254,7 +8254,7 @@ let%expect_test "testing BVC IMMEDIATE (0x50) branch taken same page pos" =
     {| ab: 0x1005 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1005 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1005 inst: BVC $03 |}]
 ;;
 
-let%expect_test "testing BVC IMMEDIATE (0x50) branch taken same page neg" =
+let%expect_test "testing BVC RELATIVE (0x50) branch taken same page neg" =
   let cycles = 3 in
   let pgm = [ 0x50; 0xF0 ] in
   let computer = init_test_computer 0x1010 pgm in
@@ -8269,7 +8269,7 @@ let%expect_test "testing BVC IMMEDIATE (0x50) branch taken same page neg" =
     {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: BVC $F0 |}]
 ;;
 
-let%expect_test "testing BVC IMMEDIATE (0x50) branch taken pos page cross" =
+let%expect_test "testing BVC RELATIVE (0x50) branch taken pos page cross" =
   let cycles = 4 in
   let pgm = [ 0x50; 0x05 ] in
   let computer = init_test_computer 0x10FE pgm in
@@ -8281,10 +8281,10 @@ let%expect_test "testing BVC IMMEDIATE (0x50) branch taken pos page cross" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1205 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1205 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1205 inst: BVC $05 |}]
+    {| ab: 0x1105 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1105 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1105 inst: BVC $05 |}]
 ;;
 
-let%expect_test "testing BVC IMMEDIATE (0x50) branch taken neg page cross" =
+let%expect_test "testing BVC RELATIVE (0x50) branch taken neg page cross" =
   let cycles = 4 in
   let pgm = [ 0x50; 0xFA ] in
   let computer = init_test_computer 0x1001 pgm in
@@ -8299,7 +8299,7 @@ let%expect_test "testing BVC IMMEDIATE (0x50) branch taken neg page cross" =
     {| ab: 0x0FFD db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x0FFD data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x0FFD inst: BVC $FA |}]
 ;;
 
-let%expect_test "testing BVS IMMEDIATE (0x70) branch not taken" =
+let%expect_test "testing BVS RELATIVE (0x70) branch not taken" =
   let cycles = 2 in
   let pgm = [ 0x70; 0x03 ] in
   let computer = init_test_computer 0x1000 pgm in
@@ -8314,7 +8314,7 @@ let%expect_test "testing BVS IMMEDIATE (0x70) branch not taken" =
     {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: BVS $03 |}]
 ;;
 
-let%expect_test "testing BVS IMMEDIATE (0x70) branch taken same page pos" =
+let%expect_test "testing BVS RELATIVE (0x70) branch taken same page pos" =
   let cycles = 3 in
   let pgm = [ 0x70; 0x03 ] in
   let computer = init_test_computer 0x1000 pgm in
@@ -8329,7 +8329,7 @@ let%expect_test "testing BVS IMMEDIATE (0x70) branch taken same page pos" =
     {| ab: 0x1005 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1005 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nV-bdizc pc: 0x1005 inst: BVS $03 |}]
 ;;
 
-let%expect_test "testing BVS IMMEDIATE (0x70) branch taken same page neg" =
+let%expect_test "testing BVS RELATIVE (0x70) branch taken same page neg" =
   let cycles = 3 in
   let pgm = [ 0x70; 0xF0 ] in
   let computer = init_test_computer 0x1010 pgm in
@@ -8344,7 +8344,7 @@ let%expect_test "testing BVS IMMEDIATE (0x70) branch taken same page neg" =
     {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nV-bdizc pc: 0x1002 inst: BVS $F0 |}]
 ;;
 
-let%expect_test "testing BVS IMMEDIATE (0x70) branch taken pos page cross" =
+let%expect_test "testing BVS RELATIVE (0x70) branch taken pos page cross" =
   let cycles = 4 in
   let pgm = [ 0x70; 0x05 ] in
   let computer = init_test_computer 0x10FE pgm in
@@ -8356,10 +8356,10 @@ let%expect_test "testing BVS IMMEDIATE (0x70) branch taken pos page cross" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1205 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1205 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nV-bdizc pc: 0x1205 inst: BVS $05 |}]
+    {| ab: 0x1105 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1105 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nV-bdizc pc: 0x1105 inst: BVS $05 |}]
 ;;
 
-let%expect_test "testing BVS IMMEDIATE (0x70) branch taken neg page cross" =
+let%expect_test "testing BVS RELATIVE (0x70) branch taken neg page cross" =
   let cycles = 4 in
   let pgm = [ 0x70; 0xFA ] in
   let computer = init_test_computer 0x1001 pgm in
@@ -8521,7 +8521,7 @@ let%expect_test "testing BRK IMPLIED (0x00)" =
     {|
     ab: 0xC010 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0xC010 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFB sr: nv-BdIzC pc: 0xC010 inst: BRK
     Mem: 0x01FB : 0x85
-    Mem: 0x01FC : 0x35
+    Mem: 0x01FC : 0x31
     Mem: 0x01FD : 0x02
     Mem: 0x01FE : 0x10
     Mem: 0x01FF : 0x81
@@ -8741,7 +8741,7 @@ let%expect_test "testing RESET unmasked" =
   dump_last_execution_mem executions [ 0x1FB; 0x1FC; 0x1FD; 0x1FE; 0x1FF ];
   [%expect
     {|
-    ab: 0xC0FC db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0xC0FC data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0xC0FC inst: BRK
+    ab: 0xC0FC db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0xC0FC data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdIzc pc: 0xC0FC inst: BRK
     Mem: 0x01FB : 0x85
     Mem: 0x01FC : 0x84
     Mem: 0x01FD : 0x83
