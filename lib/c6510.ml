@@ -80,6 +80,7 @@ module M = struct
     ; mode : addressingmode
     ; bytes : int
     ; cycles : int
+    ; opcode : int
     }
   [@@warning "-69"]
   (* [@@deriving sexp] *)
@@ -407,6 +408,7 @@ module M = struct
       | 0xEE -> INC, ABSOLUTE, 3, 6
       | 0xF0 -> BEQ, RELATIVE, 2, 2
       | 0xF1 -> SBC, INDIRECTINDEXED, 2, 5
+      (* | 0xF5 -> ADC, ZEROPAGEX, 2, 4 *)
       | 0xF6 -> INC, ZEROPAGEX, 2, 6
       | 0xF8 -> SED, IMPLIED, 1, 2
       | 0xF9 -> SBC, ABSOLUTEY, 3, 4
@@ -416,7 +418,7 @@ module M = struct
     in
     match mnemonic with
     | JAM -> None
-    | _ -> Some { inst = mnemonic; mode; bytes; cycles }
+    | _ -> Some { inst = mnemonic; mode; bytes; cycles; opcode = inst }
   ;;
 
   let sr_to_string sr =
@@ -842,7 +844,6 @@ module M = struct
               if cpu.data land 0b1000_0000 = 0b1000_0000 then cpu.data - 256 else cpu.data
             in
             let pcl = (cpu.pc land 0xFF) + offset in
-            let pc = cpu.pc + 1 in
             let branch_taken =
               match cpu.ir.inst with
               | BCC -> not (cpu.sr land 0b0000_0001 = 0b0000_0001)
@@ -857,9 +858,11 @@ module M = struct
             in
             if branch_taken
             then (
-              let address = pc land 0xFF00 lor (pcl land 0xFF) in
+              let address = cpu.pc land 0xFF00 lor (pcl land 0xFF) in
               Some { cpu with pcl; address; pc = address; rw = true; cycle = 3 })
-            else Some { cpu with address = pc; pc; rw = true; cycle = 1 }
+            else (
+              let pc = cpu.pc + 1 in
+              Some { cpu with address = pc; pc; rw = true; cycle = 1 })
           | INDEXEDINDIRECT ->
             let operand = cpu.data in
             let pc = cpu.pc + 1 in

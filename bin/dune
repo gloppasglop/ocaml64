@@ -19,5 +19,8 @@
   matrix.charts
   matrix.ansi
   matrix.grid
+  domainslib
+  zstandard
+  bigstringaf
   stdio
   ocaml64))
