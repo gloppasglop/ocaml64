@@ -932,7 +932,8 @@ let execute_cycles to_swapper from_swapper cycles computer =
   let rec aux n c =
     if n = 0
     then (
-      (* TODO: CHeck fi we really need this when we exit *)
+      (* TODO: CHeck if we really need this when we exit *)
+      (* We need to make sure we save the last state *)
       Chan.send to_swapper buff;
       (*TODO receive should get the status *)
       let _ = Chan.recv from_swapper in
@@ -940,7 +941,7 @@ let execute_cycles to_swapper from_swapper cycles computer =
     else (
       let computer' = M.fetch_decode_execute c in
       match computer' with
-      | None -> printf "TODO: Received None computer\n%!"
+      | None -> failwith "TODO: Received Non computer\n"
       (* TODO: CHeck fi we really need this when we exit *)
       (* Chan.send to_swapper buff; *)
       (* let _ = Chan.recv from_swapper in *)
