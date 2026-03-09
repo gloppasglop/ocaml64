@@ -33,3 +33,5 @@ _opam/
 *.txt
 
 *.bin
+trace_*
+*.zst

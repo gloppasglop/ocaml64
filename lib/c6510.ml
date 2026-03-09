@@ -408,7 +408,7 @@ module M = struct
       | 0xEE -> INC, ABSOLUTE, 3, 6
       | 0xF0 -> BEQ, RELATIVE, 2, 2
       | 0xF1 -> SBC, INDIRECTINDEXED, 2, 5
-      (* | 0xF5 -> ADC, ZEROPAGEX, 2, 4 *)
+      | 0xF5 -> SBC, ZEROPAGEX, 2, 4
       | 0xF6 -> INC, ZEROPAGEX, 2, 6
       | 0xF8 -> SED, IMPLIED, 1, 2
       | 0xF9 -> SBC, ABSOLUTEY, 3, 4
@@ -474,15 +474,36 @@ module M = struct
   (* or *)
   (* Negative + Negative = Positive *)
   let inst_adc a m sr =
-    let res = a + m + (sr land 0x01) in
-    let carry = (res land 0b1_0000_0000) lsr 8 in
-    let res = res land 0xFF in
-    let overflow = (a lxor res land (m lxor res) land 0x80) lsr 1 in
-    let res = res land 0xFF in
-    let sr1 = set_nz sr res in
-    let sr2 = sr1 land lnot 0b0000_0001 lor (carry land 0b0000_0001) in
-    let sr3 = sr2 land lnot 0b0100_0000 lor (overflow land 0b0100_0000) in
-    res land 0xFF, sr3
+    if sr land 0b0000_1000 = 0b0000_0000
+    then (
+      let res = a + m + (sr land 0x01) in
+      let carry = (res land 0b1_0000_0000) lsr 8 in
+      let res = res land 0xFF in
+      let overflow = (a lxor res land (m lxor res) land 0x80) lsr 1 in
+      let res = res land 0xFF in
+      let sr1 = set_nz sr res in
+      let sr2 = sr1 land lnot 0b0000_0001 lor (carry land 0b0000_0001) in
+      let sr3 = sr2 land lnot 0b0100_0000 lor (overflow land 0b0100_0000) in
+      res land 0xFF, sr3)
+    else (
+      let a_low = a land 0xF in
+      let a_high = a land 0xF0 in
+      let m_low = m land 0xF in
+      let m_high = m land 0xF0 in
+      let res_low = a_low + m_low + (sr land 0x01) in
+      let carry_low = if res_low > 9 then 0x06 else 0x00 in
+      let res_low = res_low + carry_low in
+      let res_high = a_high + m_high + res_low in
+      let carry_high = if res_high land 0xFF0 > 0x90 then 0x60 else 0 in
+      let res_binary = res_high + carry_high in
+      let carry = (res_binary land 0b1_0000_0000) lsr 8 in
+      let res_binary = res_binary land 0xFF in
+      let overflow = (a lxor res_binary land (m lxor res_binary) land 0x80) lsr 1 in
+      let sr = set_nz sr res_binary in
+      let sr = sr land lnot 0b0000_0001 lor (carry land 0b0000_0001) in
+      let sr = sr land lnot 0b0100_0000 lor (overflow land 0b0100_0000) in
+      let res = res_low land 0x0F lor (res_binary land 0xF0) in
+      res, sr)
   ;;
 
   let inst_sbc a m sr =
@@ -504,7 +525,7 @@ module M = struct
   (* ;; *)
 
   let inst_cmp a m sr =
-    let sr' = sr land lnot 0b0000_0001 lor 0b0000_0001 in
+    let sr' = sr land lnot 0b0000_1001 lor 0b0000_0001 in
     let res, sr'' = inst_sbc a m sr' in
     res, sr'' land 0b1000_0011 lor (sr land 0b0111_1100)
   ;;
