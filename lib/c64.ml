@@ -1534,6 +1534,19 @@ let%expect_test "testing CPX IMMEDIATE (0xE0) Equality " =
     {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x42 y: 0x03 sp: 0xFF sr: nv-bdiZC pc: 0x1002 inst: CPX #$42 |}]
 ;;
 
+let%expect_test "testing CPX IMMEDIATE (0xE0) Equality Wit Decimal flag set" =
+  let cycles = 2 in
+  let pgm = [ 0xE0; 0xFE ] in
+  let computer = init_test_computer 0x1000 pgm in
+  let computer =
+    { computer with cpu = { computer.cpu with a = 0x01; x = 0xFE; y = 0x03; sr = 0x08 } }
+  in
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0xFE y: 0x03 sp: 0xFF sr: nv-bDiZC pc: 0x1002 inst: CPX #$FE |}]
+;;
+
 let%expect_test "testing CPX IMMEDIATE (0xE0) Greater than" =
   let cycles = 2 in
   let pgm = [ 0xE0; 0x01 ] in
@@ -3950,6 +3963,86 @@ let%expect_test "testing ADC ZEROPAGEX (0x75) wrap around" =
   dump_last_execution executions;
   [%expect
     {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x06 x: 0xFF y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: ADC $44,X |}]
+;;
+
+let%expect_test "testing SBC ZEROPAGEX (0xF5) No Borrow" =
+  let cycles = 4 in
+  let pgm = [ 0xF5; 0x44 ] in
+  let computer = init_test_computer 0x1000 pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x05; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x01 }
+    }
+  in
+  computer.banks.(0x46) <- 0x02;
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x03 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizC pc: 0x1002 inst: SBC $44,X |}]
+;;
+
+let%expect_test "testing SBC ZEROPAGEX (0xF5) with borrow" =
+  let cycles = 4 in
+  let pgm = [ 0xF5; 0x44 ] in
+  let computer = init_test_computer 0x1000 pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x05; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
+    }
+  in
+  computer.banks.(0x46) <- 0x02;
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x02 x: 0x02 y: 0x03 sp: 0xFD sr: nv-bdizC pc: 0x1002 inst: SBC $44,X |}]
+;;
+
+let%expect_test "testing SBC ZEROPAGEX (0xF5) Underflow" =
+  let cycles = 4 in
+  let pgm = [ 0xF5; 0x44 ] in
+  let computer = init_test_computer 0x1000 pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x01 }
+    }
+  in
+  computer.banks.(0x46) <- 0x02;
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0xFF x: 0x02 y: 0x03 sp: 0xFD sr: Nv-bdizc pc: 0x1002 inst: SBC $44,X |}]
+;;
+
+let%expect_test "testing SBC ZEROPAGEX (0xF5) Overflow" =
+  let cycles = 4 in
+  let pgm = [ 0xF5; 0x44 ] in
+  let computer = init_test_computer 0x1000 pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x80; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x01 }
+    }
+  in
+  computer.banks.(0x46) <- 0x01;
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x7F x: 0x02 y: 0x03 sp: 0xFD sr: nV-bdizC pc: 0x1002 inst: SBC $44,X |}]
+;;
+
+let%expect_test "testing SBC ZEROPAGEX (0xF5) wrap around" =
+  let cycles = 4 in
+  let pgm = [ 0xF5; 0x44 ] in
+  let computer = init_test_computer 0x1000 pgm in
+  let computer =
+    { computer with
+      cpu = { computer.cpu with a = 0x05; x = 0xFF; y = 0x03; sp = 0xFD; sr = 0x01 }
+    }
+  in
+  computer.banks.(0x43) <- 0x02;
+  let executions = execute_cycles cycles computer in
+  dump_last_execution executions;
+  [%expect
+    {| ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x03 x: 0xFF y: 0x03 sp: 0xFD sr: nv-bdizC pc: 0x1002 inst: SBC $44,X |}]
 ;;
 
 let%expect_test "testing STA ZEROPAGEX (0x95)" =

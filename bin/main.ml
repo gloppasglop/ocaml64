@@ -49,6 +49,10 @@ module Trace = struct
     ; max_cycles : int
     }
 
+  type message =
+    | Switch of double_buffer * (int64 * int64 * int64)
+    | Terminate of double_buffer
+
   (* let as_bigstring (arr : (int64, int64_elt, c_layout) Bigarray.Array1.t) *)
   (* : Core.Bigstring.t *)
   (* = *)
@@ -143,25 +147,44 @@ module Trace = struct
   let swap_buffers in_chan out_chan =
     let open Domainslib in
     while true do
-      let t = Chan.recv in_chan in
-      printf "swap_buffers: active: %d frozen: %d\n" t.active.cursor t.frozen.cursor;
-      (* Loop until the buffer is not busy*)
-      t.active.cursor <- 0;
-      let temp = t.active in
-      t.active <- t.frozen;
-      t.frozen <- temp;
-      Chan.send out_chan t;
-      try
-        (* Compress and dump *)
-        (* printf "cOMPRESSING buffers\n"; *)
-        compress_to_disk t.frozen.data
-      with
-      (* printf "cOMPRESSING buffers - AFER\n" *)
-      | exn ->
-        let msg = Exn.to_string exn in
-        let backtrace = Backtrace.get () |> Backtrace.to_string in
-        eprintf "Compression failed: %s\n%s%!" msg backtrace;
-        failwith "Exception"
+      let msg = Chan.recv in_chan in
+      match msg with
+      | Switch (t, (i1, i2, i3)) ->
+        printf "swap_buffers: active: %d frozen: %d\n" t.active.cursor t.frozen.cursor;
+        (* Loop until the buffer is not busy*)
+        let temp = t.active in
+        t.active <- t.frozen;
+        t.frozen <- temp;
+        t.active.data.{0} <- i1;
+        t.active.data.{1} <- i2;
+        t.active.data.{2} <- i3;
+        t.active.cursor <- 1;
+        Chan.send out_chan t;
+        (try
+           (* Compress and dump *)
+           (* printf "cOMPRESSING buffers\n"; *)
+           compress_to_disk t.frozen.data
+         with
+         (* printf "cOMPRESSING buffers - AFER\n" *)
+         | exn ->
+           let msg = Exn.to_string exn in
+           let backtrace = Backtrace.get () |> Backtrace.to_string in
+           eprintf "Compression failed: %s\n%s%!" msg backtrace;
+           failwith "Exception")
+      | Terminate t ->
+        (try
+           (* Compress and dump *)
+           (* printf "cOMPRESSING buffers\n"; *)
+           compress_to_disk t.frozen.data
+         with
+         (* printf "cOMPRESSING buffers - AFER\n" *)
+         | exn ->
+           let msg = Exn.to_string exn in
+           let backtrace = Backtrace.get () |> Backtrace.to_string in
+           eprintf "Compression failed: %s\n%s%!" msg backtrace;
+           Chan.send out_chan t;
+           failwith "Exception");
+        Chan.send out_chan t
     done
   ;;
 
@@ -354,7 +377,8 @@ module Trace = struct
       active.cursor <- active.cursor + 1)
     else (
       printf "Swapping %d\n%!" active.cursor;
-      Domainslib.Chan.send to_swapper t;
+      let pack1, pack2, pack3 = pack_computer current in
+      Domainslib.Chan.send to_swapper (Switch (t, (pack1, pack2, pack3)));
       let _ = Domainslib.Chan.recv from_swapper in
       ())
   ;;
@@ -446,7 +470,7 @@ type model =
   ; status : status
   ; memory_dump_start : int
   ; buffer : Trace.double_buffer
-  ; to_swapper : Trace.double_buffer Domainslib.Chan.t
+  ; to_swapper : Trace.message Domainslib.Chan.t
   ; from_swapper : Trace.double_buffer Domainslib.Chan.t
   }
 
@@ -897,9 +921,9 @@ let subscriptions _model =
 ;;
 
 (* let buff = Trace.create 2_000_000 *)
-let buff = Trace.create 1_000_000
+let buff = Trace.create 10_000_000
 
-let dump_execution n (previous : M.t option) (computer : M.t) =
+let _dump_execution n (previous : M.t option) (computer : M.t) =
   match previous with
   | None -> failwith "Impossible"
   | Some previous ->
@@ -934,27 +958,32 @@ let execute_cycles to_swapper from_swapper cycles computer =
     then (
       (* TODO: CHeck if we really need this when we exit *)
       (* We need to make sure we save the last state *)
-      Chan.send to_swapper buff;
+      Chan.send to_swapper (Trace.Terminate buff);
       (*TODO receive should get the status *)
       let _ = Chan.recv from_swapper in
       ())
     else (
       let computer' = M.fetch_decode_execute c in
       match computer' with
-      | None -> failwith "TODO: Received Non computer\n"
+      | None ->
+        Chan.send to_swapper (Trace.Terminate buff);
+        (*TODO receive should get the status *)
+        let _ = Chan.recv from_swapper in
+        ();
+        failwith "TODO: Received None computer\n"
       (* TODO: CHeck fi we really need this when we exit *)
       (* Chan.send to_swapper buff; *)
       (* let _ = Chan.recv from_swapper in *)
       (* () *)
       | Some c' ->
-        dump_execution n (Some c) c';
+        (* dump_execution n (Some c) c'; *)
         Trace.record to_swapper from_swapper buff (Some c) c';
         aux (n - 1) c')
   in
   (* dump_execution 0 None computer; *)
   Trace.record to_swapper from_swapper buff None computer;
   aux half_cycles computer;
-  Chan.send to_swapper buff;
+  Chan.send to_swapper (Trace.Terminate buff);
   (*TODO receive should get the status *)
   let _ = Chan.recv from_swapper in
   ()
@@ -972,7 +1001,7 @@ let () =
       let from_swapper = Chan.make_bounded 1 in
       printf "Spawning swap buffer domain\n";
       let _ = Domain.spawn (fun () -> Trace.swap_buffers to_swapper from_swapper) in
-      execute_cycles to_swapper from_swapper 500_000_000 computer)
+      execute_cycles to_swapper from_swapper 100_000_000 computer)
   else (
     let uncompressed_data = Trace.decompress_from_disk !arg_replay_file in
     let len = Bigarray.Array1.dim uncompressed_data in
