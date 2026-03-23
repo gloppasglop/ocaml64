@@ -62,6 +62,7 @@ module Computer = struct
          | p when p < 0xA000 -> mem.ram.(i)
          | p when p < 0xC000 -> mem.basic.(i - 0xA000)
          | p when p < 0xD000 -> mem.ram.(i)
+         (* TODO Remove temporary hack to put all VI-II to 0*)
          (* | p when p < 0xE000 -> failwith "READ FROM I/O DEVICES" *)
          | p when p < 0xE000 -> mem.ram.(i)
          | p when p < 0x10000 -> mem.kernal.(i - 0xE000)
@@ -192,39 +193,23 @@ module Computer = struct
     (* During the first cycle of an struction we need to read from memory we take the value on the bus put it on the data pins of the cpu *)
     (* TODO: Add a mapping function to access the correct bank *)
     let phy2 = cpu.phy2 in
-    let bus' = { bus with address = cpu.address } in
-    let rs = bus'.address land 0x000F in
+    (* let bus' = { bus with address = cpu.address } in *)
+    let rs = cpu.address land 0x000F in
     let computer =
       match phy2 with
       | false ->
-        let cia1 =
-          Cia.tick
-            { cia1 with
-              phy2
-            ; csb = not phy2
-            ; rw = cpu.rw
-            ; rs
-            ; data = Mem.read mem (0xDC00 lor rs)
-            }
-        in
-        let cia2 =
-          Cia.tick
-            { cia1 with
-              phy2
-            ; csb = not phy2
-            ; rw = cpu.rw
-            ; rs
-            ; data = Mem.read mem (0xDD00 lor rs)
-            }
-        in
-        let bus' = { bus with address = cpu.address } in
-        let toto =
-          match cpu.rw with
-          | false -> cpu
-          | true -> cpu
-        in
-        Some { cpu = { cpu with phy2 = true }; bus = bus'; mem; operand; cia1; cia2 }
+        let cia1 = Cia.tick { cia1 with phy2; csb = not phy2; rw = cpu.rw } in
+        let cia2 = Cia.tick { cia1 with phy2; csb = not phy2; rw = cpu.rw } in
+        Some
+          { cpu = { cpu with phy2 = true }
+          ; bus = { bus with address = cpu.address }
+          ; mem
+          ; operand
+          ; cia1
+          ; cia2
+          }
       | true ->
+        (* TODO: Handle RDY correctly . See VIC-II timing info*)
         (match cpu.rdy with
          | true ->
            let operand =
@@ -241,22 +226,97 @@ module Computer = struct
            (match cpu' with
             | None -> None
             | Some cpu' ->
-              let bus' =
-                match cpu'.rw with
-                | true -> { address = cpu'.address; data = Mem.read mem cpu'.address }
-                | false ->
-                  Mem.write mem cpu'.address cpu'.data;
-                  { address = cpu'.address; data = cpu'.data }
-              in
-              Some
-                { cpu =
-                    { cpu' with phy2 = false; address = bus'.address; data = bus'.data }
-                ; bus = bus'
-                ; mem
-                ; operand
-                ; cia1
-                ; cia2
-                })
+              (match cpu'.rw with
+               | true ->
+                 let cia1 =
+                   Cia.tick
+                     { cia1 with
+                       phy2
+                     ; csb = (not phy2) && cpu'.address land 0xFF00 = 0xDC00
+                     ; rw = cpu.rw
+                     ; rs
+                     }
+                 in
+                 let cia2 =
+                   Cia.tick
+                     { cia2 with
+                       phy2
+                     ; csb = (not phy2) && cpu'.address land 0xFF00 = 0xDD00
+                     ; rw = cpu.rw
+                     ; rs
+                     }
+                 in
+                 let data =
+                   match cpu'.address with
+                   | 0xDC00 ->
+                     Mem.write mem cpu'.address cia1.data;
+                     cia1.data
+                   | 0xDD00 ->
+                     Mem.write mem cpu'.address cia2.data;
+                     cia2.data
+                   | 0xD012 -> 0
+                   | _ -> Mem.read mem cpu'.address
+                 in
+                 Some
+                   { cpu = { cpu' with phy2 = false; address = cpu'.address; data }
+                   ; bus = { address = cpu'.address; data }
+                   ; mem
+                   ; operand
+                   ; cia1
+                   ; cia2
+                   }
+               | false ->
+                 let cia1 =
+                   Cia.tick
+                     { cia1 with
+                       phy2
+                     ; csb = (not phy2) && cpu'.address land 0xFF00 = 0xDC00
+                     ; rw = cpu.rw
+                     ; rs
+                     ; data = cpu'.data
+                     }
+                 in
+                 let cia2 =
+                   Cia.tick
+                     { cia2 with
+                       phy2
+                     ; csb = (not phy2) && cpu'.address land 0xFF00 = 0xDD00
+                     ; rw = cpu.rw
+                     ; rs
+                     ; data = cpu'.data
+                     }
+                 in
+                 (match cpu'.address with
+                  | 0xDC00 | 0xDD00 ->
+                    Mem.write mem cpu'.address cpu'.data;
+                    Some
+                      { cpu =
+                          { cpu' with
+                            phy2 = false
+                          ; address = cpu'.address
+                          ; data = cpu'.data
+                          }
+                      ; bus = { address = cpu'.address; data = cpu'.data }
+                      ; mem
+                      ; operand
+                      ; cia1
+                      ; cia2
+                      }
+                  | _ ->
+                    Mem.write mem cpu'.address cpu'.data;
+                    Some
+                      { cpu =
+                          { cpu' with
+                            phy2 = false
+                          ; address = cpu'.address
+                          ; data = cpu'.data
+                          }
+                      ; bus = { address = cpu'.address; data = cpu'.data }
+                      ; mem
+                      ; operand
+                      ; cia1
+                      ; cia2
+                      })))
          | false -> Some { operand; cpu; bus; mem; cia1; cia2 })
     in
     computer

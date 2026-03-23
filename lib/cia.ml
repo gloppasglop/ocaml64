@@ -121,8 +121,8 @@ F   CRB
       | 12 -> { chip with data = chip.sdr; pcb = false }
       | 13 ->
         { chip with data = chip.icr land 0b1001_1111; icr = 0; irqb = true; pcb = false }
-      | 14 -> { chip with data = chip.cra; pcb = false }
-      | 15 -> { chip with data = chip.crb; pcb = false }
+      | 14 -> { chip with data = chip.cra land 0b1110_1111; pcb = false }
+      | 15 -> { chip with data = chip.crb land 0b1110_1111; pcb = false }
       | _ -> failwith "TODO"
     in
     let write chip =
@@ -208,6 +208,10 @@ F   CRB
               chip.talo land (chip.tahi lsl 8)
           in
           (* Check if we underflow *)
+          Stdio.printf "Before Write rs: %02X data: %02X\n" chip.rs chip.data;
+          Stdio.printf "Before Write ta : %02X%02X\n" chip.tahi chip.talo;
+          Stdio.printf "Before Write  tal : %02X%02X\n" chip.talhi chip.tallo;
+          Stdio.printf "Before Write  ta : %04X\n" ta;
           if ta < 0
           then (
             (* Underflow *)
@@ -261,7 +265,7 @@ F   CRB
           ( { chip with
               talo = chip.tallo
             ; tahi = chip.talhi
-            ; cra = chip.cra land 0b1111_1110
+            ; cra = chip.cra land 0b1110_1110
             }
           , false )
       in
@@ -355,7 +359,7 @@ F   CRB
           { chip with
             tblo = chip.tbllo
           ; tbhi = chip.tblhi
-          ; crb = chip.crb land 0b1111_1110
+          ; crb = chip.crb land 0b1110_1110
           }
       in
       chip

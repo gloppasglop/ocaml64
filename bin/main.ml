@@ -505,7 +505,7 @@ let init () =
     ; computer
     ; executions
     ; status = OK
-    ; memory_dump_start = 0x0400
+    ; memory_dump_start = 0xDC00
     ; memory_dump_start_input = "400"
     ; buffer = Trace.create 2_000_000
     ; to_swapper = Domainslib.Chan.make_bounded 1
@@ -720,132 +720,212 @@ let trace model =
 
 let cpu_controls model =
   box
-    ~border:true
-    ~title:"CPU Controls"
-    ~padding:(padding 1)
+    ~border:false
+    ~padding:(padding 0)
     ~flex_direction:Column
     ~size:{ width = auto; height = pct 100 }
     [ box
+        ~border:true
+        ~title:"CPU Controls"
+        ~padding:(padding 1)
         ~flex_direction:Column
-        ~gap:(gap 1)
-        ~size:{ width = pct 100; height = auto }
-        [ text (Printf.sprintf "Step size: %d" model.step) ]
-    ; box
-        ~flex_direction:Column
-        ~gap:(gap 0)
-        ~size:{ width = pct 100; height = auto }
+        ~size:{ width = auto; height = pct 100 }
         [ box
+            ~flex_direction:Column
+            ~gap:(gap 1)
+            ~size:{ width = pct 100; height = auto }
+            [ text (Printf.sprintf "Step size: %d" model.step) ]
+        ; box
+            ~flex_direction:Column
+            ~gap:(gap 0)
+            ~size:{ width = pct 100; height = auto }
+            [ box
+                ~flex_direction:Row
+                ~gap:(gap 0)
+                [ box ~border:true ~padding:(padding 1) [ text "|<" ]
+                ; box
+                    ~border:true
+                    ~padding:(padding 1)
+                    [ text (if model.running then "||" else "> ") ]
+                ; box ~border:true ~padding:(padding 1) [ text ">|" ]
+                ; box ~border:true ~padding:(padding 1) [ text ">>|" ]
+                ; box ~border:true ~padding:(padding 1) [ text "->" ]
+                ; box ~border:true ~padding:(padding 1) [ text "@" ]
+                ]
+            ]
+        ; box
             ~flex_direction:Row
             ~gap:(gap 0)
-            [ box ~border:true ~padding:(padding 1) [ text "|<" ]
+            ~padding:(padding 0)
+            (* ~justify_items:Start *)
+            [ box
+                ~padding:(padding 1)
+                ~flex_direction:Column
+                [ text "Status:"; text "Addr:"; text "Data:"; text "PC" ]
+            ; box
+                ~align_items:End
+                ~padding:(padding 1)
+                ~flex_direction:Column
+                [ text
+                    (match model.status with
+                     | OK -> "OK"
+                     | ERROR -> "KO")
+                ; text (Printf.sprintf "0x%04X" model.computer.cpu.address)
+                ; text (Printf.sprintf "0x%02X" model.computer.cpu.data)
+                ; text (Printf.sprintf "0x%04X" model.computer.cpu.pc)
+                ]
+            ; box
+                ~padding:(padding 1)
+                ~flex_direction:Column
+                [ text "Cycle:"; text "A:"; text "X:"; text "Y:" ]
+            ; box
+                ~align_items:End
+                ~padding:(padding 1)
+                ~flex_direction:Column
+                [ text (Printf.sprintf "%d" model.computer.cpu.cycle)
+                ; text (Printf.sprintf "0x%02X" model.computer.cpu.a)
+                ; text (Printf.sprintf "0x%02X" model.computer.cpu.x)
+                ; text (Printf.sprintf "0x%02X" model.computer.cpu.y)
+                ]
+            ; box
+                ~padding:(padding 1)
+                ~flex_direction:Column
+                [ text "ASM:"; text "FLags:"; text "SR:"; text "SP:" ]
+            ; box
+                ~align_items:End
+                ~padding:(padding 1)
+                ~flex_direction:Column
+                [ text
+                    (Printf.sprintf
+                       "%11s"
+                       (Cpu.inst_to_string
+                          model.computer.cpu.ir.inst
+                          model.computer.cpu.ir.mode
+                          model.computer.operand))
+                ; text (Printf.sprintf "%8s" (Cpu.sr_to_string model.computer.cpu.sr))
+                ; text (Printf.sprintf "0x%02X" model.computer.cpu.sr)
+                ; text (Printf.sprintf "0x%02X" model.computer.cpu.sp)
+                ]
+            ]
+        ; box
+            ~flex_direction:Row
+            ~gap:(gap 1)
+            [ box
+                ~border:true
+                ~padding:(padding 1)
+                ~on_mouse:(fun ev ->
+                  match Event.Mouse.kind ev with
+                  | Down _ -> Some Toggle_RDY
+                  | _ -> None)
+                [ text
+                    (Printf.sprintf
+                       "[%s] RDY"
+                       (if model.computer.cpu.rdy then "X" else " "))
+                ]
             ; box
                 ~border:true
                 ~padding:(padding 1)
-                [ text (if model.running then "||" else "> ") ]
-            ; box ~border:true ~padding:(padding 1) [ text ">|" ]
-            ; box ~border:true ~padding:(padding 1) [ text ">>|" ]
-            ; box ~border:true ~padding:(padding 1) [ text "->" ]
-            ; box ~border:true ~padding:(padding 1) [ text "@" ]
+                ~on_mouse:(fun ev ->
+                  match Event.Mouse.kind ev with
+                  | Down _ -> Some Toggle_IRQ
+                  | _ -> None)
+                [ text
+                    (Printf.sprintf
+                       "[%s] IRQ"
+                       (if model.computer.cpu.irq then "X" else " "))
+                ]
+            ; box
+                ~border:true
+                ~padding:(padding 1)
+                ~on_mouse:(fun ev ->
+                  match Event.Mouse.kind ev with
+                  | Down _ -> Some Toggle_NMI
+                  | _ -> None)
+                [ text
+                    (Printf.sprintf
+                       "[%s] NMI"
+                       (if model.computer.cpu.nmi then "X" else " "))
+                ]
+            ; box
+                ~border:true
+                ~padding:(padding 1)
+                ~on_mouse:(fun ev ->
+                  match Event.Mouse.kind ev with
+                  | Down _ -> Some Toggle_RES
+                  | _ -> None)
+                [ text
+                    (Printf.sprintf
+                       "[%s] RES"
+                       (if model.computer.cpu.reset then "X" else " "))
+                ]
             ]
         ]
     ; box
-        ~flex_direction:Row
-        ~gap:(gap 0)
-        ~padding:(padding 0)
-        (* ~justify_items:Start *)
+        ~border:true
+        ~title:"CIA 1"
+        ~padding:(padding 1)
+        ~flex_direction:Column
+        ~size:{ width = auto; height = pct 100 }
         [ box
-            ~padding:(padding 1)
-            ~flex_direction:Column
-            [ text "Status:"; text "Addr:"; text "Data:"; text "PC" ]
-        ; box
-            ~align_items:End
-            ~padding:(padding 1)
-            ~flex_direction:Column
-            [ text
-                (match model.status with
-                 | OK -> "OK"
-                 | ERROR -> "KO")
-            ; text (Printf.sprintf "0x%04X" model.computer.cpu.address)
-            ; text (Printf.sprintf "0x%02X" model.computer.cpu.data)
-            ; text (Printf.sprintf "0x%04X" model.computer.cpu.pc)
-            ]
-        ; box
-            ~padding:(padding 1)
-            ~flex_direction:Column
-            [ text "Cycle:"; text "A:"; text "X:"; text "Y:" ]
-        ; box
-            ~align_items:End
-            ~padding:(padding 1)
-            ~flex_direction:Column
-            [ text (Printf.sprintf "%d" model.computer.cpu.cycle)
-            ; text (Printf.sprintf "0x%02X" model.computer.cpu.a)
-            ; text (Printf.sprintf "0x%02X" model.computer.cpu.x)
-            ; text (Printf.sprintf "0x%02X" model.computer.cpu.y)
-            ]
-        ; box
-            ~padding:(padding 1)
-            ~flex_direction:Column
-            [ text "ASM:"; text "FLags:"; text "SR:"; text "SP:" ]
-        ; box
-            ~align_items:End
-            ~padding:(padding 1)
-            ~flex_direction:Column
-            [ text
-                (Printf.sprintf
-                   "%11s"
-                   (Cpu.inst_to_string
-                      model.computer.cpu.ir.inst
-                      model.computer.cpu.ir.mode
-                      model.computer.operand))
-            ; text (Printf.sprintf "%8s" (Cpu.sr_to_string model.computer.cpu.sr))
-            ; text (Printf.sprintf "0x%02X" model.computer.cpu.sr)
-            ; text (Printf.sprintf "0x%02X" model.computer.cpu.sp)
-            ]
-        ]
-    ; box
-        ~flex_direction:Row
-        ~gap:(gap 1)
-        [ box
-            ~border:true
-            ~padding:(padding 1)
-            ~on_mouse:(fun ev ->
-              match Event.Mouse.kind ev with
-              | Down _ -> Some Toggle_RDY
-              | _ -> None)
-            [ text
-                (Printf.sprintf "[%s] RDY" (if model.computer.cpu.rdy then "X" else " "))
-            ]
-        ; box
-            ~border:true
-            ~padding:(padding 1)
-            ~on_mouse:(fun ev ->
-              match Event.Mouse.kind ev with
-              | Down _ -> Some Toggle_IRQ
-              | _ -> None)
-            [ text
-                (Printf.sprintf "[%s] IRQ" (if model.computer.cpu.irq then "X" else " "))
-            ]
-        ; box
-            ~border:true
-            ~padding:(padding 1)
-            ~on_mouse:(fun ev ->
-              match Event.Mouse.kind ev with
-              | Down _ -> Some Toggle_NMI
-              | _ -> None)
-            [ text
-                (Printf.sprintf "[%s] NMI" (if model.computer.cpu.nmi then "X" else " "))
-            ]
-        ; box
-            ~border:true
-            ~padding:(padding 1)
-            ~on_mouse:(fun ev ->
-              match Event.Mouse.kind ev with
-              | Down _ -> Some Toggle_RES
-              | _ -> None)
-            [ text
-                (Printf.sprintf
-                   "[%s] RES"
-                   (if model.computer.cpu.reset then "X" else " "))
+            ~flex_direction:Row
+            ~gap:(gap 0)
+            ~padding:(padding 0)
+            (* ~justify_items:Start *)
+            [ box
+                ~padding:(padding 1)
+                ~flex_direction:Column
+                [ text "PRA:"; text "PRB:"; text "DDRA:"; text "DDRB" ]
+            ; box
+                ~align_items:End
+                ~padding:(padding 1)
+                ~flex_direction:Column
+                [ text (Printf.sprintf "0x%02X" model.computer.cia1.pra)
+                ; text (Printf.sprintf "0x%02X" model.computer.cia1.prb)
+                ; text (Printf.sprintf "0x%02X" model.computer.cia1.ddra)
+                ; text (Printf.sprintf "0x%02X" model.computer.cia1.ddrb)
+                ]
+            ; box
+                ~padding:(padding 1)
+                ~flex_direction:Column
+                [ text "TA:"; text "TAL:"; text "TB:"; text "TBL:" ]
+            ; box
+                ~align_items:End
+                ~padding:(padding 1)
+                ~flex_direction:Column
+                [ text
+                    (Printf.sprintf
+                       "0x%02X%02X"
+                       model.computer.cia1.tahi
+                       computer.cia1.talo)
+                ; text
+                    (Printf.sprintf
+                       "0x%02X%02X"
+                       model.computer.cia1.talhi
+                       computer.cia1.tallo)
+                ; text
+                    (Printf.sprintf
+                       "0x%02X%02X"
+                       model.computer.cia1.tbhi
+                       computer.cia1.tblo)
+                ; text
+                    (Printf.sprintf
+                       "0x%02X%02X"
+                       model.computer.cia1.tblhi
+                       computer.cia1.tbllo)
+                ]
+            ; box
+                ~padding:(padding 1)
+                ~flex_direction:Column
+                [ text "SDR:"; text "ICR:"; text "CRA:"; text "CRB:" ]
+            ; box
+                ~align_items:End
+                ~padding:(padding 1)
+                ~flex_direction:Column
+                [ text (Printf.sprintf "0x%02X" model.computer.cia1.sdr)
+                ; text (Printf.sprintf "0x%02X" model.computer.cia1.icr)
+                ; text (Printf.sprintf "0x%02X" model.computer.cia1.cra)
+                ; text (Printf.sprintf "0x%02X" model.computer.cia1.crb)
+                ]
             ]
         ]
     ]
@@ -999,7 +1079,7 @@ let execute_cycles to_swapper from_swapper cycles computer =
           ());
         failwith "TODO: Received None computer\n"
       | Some c' ->
-        (* dump_execution n (Some c) c'; *)
+        dump_execution c';
         if !arg_record then Trace.record to_swapper from_swapper buff (Some c) c';
         aux (n - 1) c')
   in
