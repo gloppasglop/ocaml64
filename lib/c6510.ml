@@ -619,8 +619,8 @@ module Cpu = struct
                  Some
                    { cpu with
                      ir = brk
-                   ; address = pc
-                   ; pc
+                   ; address = pc - 2
+                   ; pc = pc - 2
                    ; sr = cpu.sr lor 0b0000_0100
                    ; rw = true
                    ; cycle = 2
@@ -1280,7 +1280,7 @@ module Cpu = struct
                Some
                  { cpu with
                    (* sr = cpu.data land 0b1100_1111 *)
-                   sr = cpu.data lor 0b0011_0000
+                   sr = cpu.data lor 0b0011_0000 land 0b1110_1111
                  ; address = cpu.pc
                  ; rw = true
                  ; cycle = 1

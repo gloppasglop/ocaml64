@@ -442,7 +442,7 @@ module CircularBuffer : CircularBuffer = struct
 
   (* let tail buffer = buffer.tail *)
   (* let capacity = 256 *)
-  let capacity = 64
+  let capacity = 32
   let mask = capacity - 1
 
   (* let length buffer = buffer.head - buffer.tail *)
@@ -505,7 +505,7 @@ let init () =
     ; computer
     ; executions
     ; status = OK
-    ; memory_dump_start = 0xDC00
+    ; memory_dump_start = 0x0400
     ; memory_dump_start_input = "400"
     ; buffer = Trace.create 2_000_000
     ; to_swapper = Domainslib.Chan.make_bounded 1
@@ -680,9 +680,8 @@ let trace model =
         ~flex_direction:Column
         ~border_color
         ~gap:(gap 0)
-        ~size:{ width = pct 100; height = pct 100 }
-        [ box
-            ~flex_grow:0.
+        ~size:{ width = pct 100; height = auto }
+        [ box (* ~flex_grow:1. *)
             ~padding:(padding 0)
             [ text "       Cycles/h SYNC RW AB   DB PC   A  X  Y  SP SR Flags    Asm" ]
         ; box
@@ -691,20 +690,15 @@ let trace model =
             [ scroll_box
                 ~scroll_y:true
                 ~scroll_x:false
-                ~sticky_scroll:true
-                ~sticky_start:`Bottom
+                  (* ~sticky_scroll:true *)
+                  (* ~sticky_start:`Bottom *)
+                ~min_size:{ width = px 0; height = px 0 }
                 ~size:{ width = pct 100; height = pct 100 }
                 (let start = CircularBuffer.head model.executions in
                  List.mapi
                    (CircularBuffer.to_list model.executions)
                    ~f:(fun i (tick, computer) ->
                      let cycle = start + i in
-                     (* Stdio.eprintf *)
-                     (* "Start: %10d i: %4d cycle: %10d - %s\n" *)
-                     (* start *)
-                     (* i *)
-                     (* cycle *)
-                     (* (computer_to_row tick computer); *)
                      box
                        ~key:(Int.to_string cycle)
                        ~padding:(padding 0)
@@ -892,26 +886,10 @@ let cpu_controls model =
                 ~align_items:End
                 ~padding:(padding 1)
                 ~flex_direction:Column
-                [ text
-                    (Printf.sprintf
-                       "0x%02X%02X"
-                       model.computer.cia1.tahi
-                       computer.cia1.talo)
-                ; text
-                    (Printf.sprintf
-                       "0x%02X%02X"
-                       model.computer.cia1.talhi
-                       computer.cia1.tallo)
-                ; text
-                    (Printf.sprintf
-                       "0x%02X%02X"
-                       model.computer.cia1.tbhi
-                       computer.cia1.tblo)
-                ; text
-                    (Printf.sprintf
-                       "0x%02X%02X"
-                       model.computer.cia1.tblhi
-                       computer.cia1.tbllo)
+                [ text (Printf.sprintf "0x%04X" model.computer.cia1.ta)
+                ; text (Printf.sprintf "0x%04X" model.computer.cia1.tal)
+                ; text (Printf.sprintf "0x%04X" model.computer.cia1.tb)
+                ; text (Printf.sprintf "0x%04X" model.computer.cia1.tbl)
                 ]
             ; box
                 ~padding:(padding 1)

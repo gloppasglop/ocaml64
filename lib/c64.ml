@@ -184,8 +184,8 @@ module Computer = struct
     ; bus = { address = 0x00FF; data = 0x00 }
     ; mem
     ; operand = 0x0000
-    ; cia1 = Cia.create ()
-    ; cia2 = Cia.create ()
+    ; cia1 = Cia.create 1
+    ; cia2 = Cia.create 2
     }
   ;;
 
@@ -194,14 +194,19 @@ module Computer = struct
     (* TODO: Add a mapping function to access the correct bank *)
     let phy2 = cpu.phy2 in
     (* let bus' = { bus with address = cpu.address } in *)
-    let rs = cpu.address land 0x000F in
     let computer =
       match phy2 with
       | false ->
-        let cia1 = Cia.tick { cia1 with phy2; csb = not phy2; rw = cpu.rw } in
-        let cia2 = Cia.tick { cia1 with phy2; csb = not phy2; rw = cpu.rw } in
+        let rs = cpu.address land 0x000F in
+        let cia1 =
+          Cia.tick { cia1 with phy2; csb = true; rw = cpu.rw; rs; data = bus.data }
+        in
+        let cia2 =
+          Cia.tick { cia2 with phy2; csb = true; rw = cpu.rw; rs; data = bus.data }
+        in
+        let irq = (not cia1.irqb) || not cia2.irqb in
         Some
-          { cpu = { cpu with phy2 = true }
+          { cpu = { cpu with phy2 = true; irq }
           ; bus = { bus with address = cpu.address }
           ; mem
           ; operand
@@ -226,14 +231,15 @@ module Computer = struct
            (match cpu' with
             | None -> None
             | Some cpu' ->
+              let rs = cpu'.address land 0x000F in
               (match cpu'.rw with
                | true ->
                  let cia1 =
                    Cia.tick
                      { cia1 with
                        phy2
-                     ; csb = (not phy2) && cpu'.address land 0xFF00 = 0xDC00
-                     ; rw = cpu.rw
+                     ; csb = not (cpu'.address land 0xFF00 = 0xDC00)
+                     ; rw = cpu'.rw
                      ; rs
                      }
                  in
@@ -241,8 +247,8 @@ module Computer = struct
                    Cia.tick
                      { cia2 with
                        phy2
-                     ; csb = (not phy2) && cpu'.address land 0xFF00 = 0xDD00
-                     ; rw = cpu.rw
+                     ; csb = not (cpu'.address land 0xFF00 = 0xDD00)
+                     ; rw = cpu'.rw
                      ; rs
                      }
                  in
@@ -257,8 +263,9 @@ module Computer = struct
                    | 0xD012 -> 0
                    | _ -> Mem.read mem cpu'.address
                  in
+                 let irq = (not cia1.irqb) || not cia2.irqb in
                  Some
-                   { cpu = { cpu' with phy2 = false; address = cpu'.address; data }
+                   { cpu = { cpu' with phy2 = false; address = cpu'.address; data; irq }
                    ; bus = { address = cpu'.address; data }
                    ; mem
                    ; operand
@@ -267,11 +274,19 @@ module Computer = struct
                    }
                | false ->
                  let cia1 =
+                   (* printf *)
+                   (* "Before calling write phy2: %b %04X %02X %02X rw: %b csb: %b\n" *)
+                   (* phy2 *)
+                   (* cpu'.address *)
+                   (* rs *)
+                   (* cpu'.data *)
+                   (* cpu'.rw *)
+                   (* (not (cpu'.address land 0xFF00 = 0xDC00)); *)
                    Cia.tick
                      { cia1 with
                        phy2
-                     ; csb = (not phy2) && cpu'.address land 0xFF00 = 0xDC00
-                     ; rw = cpu.rw
+                     ; csb = not (cpu'.address land 0xFF00 = 0xDC00)
+                     ; rw = cpu'.rw
                      ; rs
                      ; data = cpu'.data
                      }
@@ -280,12 +295,13 @@ module Computer = struct
                    Cia.tick
                      { cia2 with
                        phy2
-                     ; csb = (not phy2) && cpu'.address land 0xFF00 = 0xDD00
-                     ; rw = cpu.rw
+                     ; csb = not (cpu'.address land 0xFF00 = 0xDD00)
+                     ; rw = cpu'.rw
                      ; rs
                      ; data = cpu'.data
                      }
                  in
+                 let irq = (not cia1.irqb) || not cia2.irqb in
                  (match cpu'.address with
                   | 0xDC00 | 0xDD00 ->
                     Mem.write mem cpu'.address cpu'.data;
@@ -295,6 +311,7 @@ module Computer = struct
                             phy2 = false
                           ; address = cpu'.address
                           ; data = cpu'.data
+                          ; irq
                           }
                       ; bus = { address = cpu'.address; data = cpu'.data }
                       ; mem
@@ -310,6 +327,7 @@ module Computer = struct
                             phy2 = false
                           ; address = cpu'.address
                           ; data = cpu'.data
+                          ; irq
                           }
                       ; bus = { address = cpu'.address; data = cpu'.data }
                       ; mem
@@ -317,6 +335,7 @@ module Computer = struct
                       ; cia1
                       ; cia2
                       })))
+         (* Not rdy. What do we do with cias*)
          | false -> Some { operand; cpu; bus; mem; cia1; cia2 })
     in
     computer
@@ -3689,7 +3708,7 @@ let%expect_test "testing PLP IMPLIED (0x28)" =
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1001 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFE sr: NV-BdiZC pc: 0x1001 inst: PLP |}]
+    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1001 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFE sr: NV-bdiZC pc: 0x1001 inst: PLP |}]
 ;;
 
 let%expect_test "testing LDA ZEROPAGEX (0xB5) non-zero positive" =
@@ -8780,8 +8799,8 @@ let%expect_test "testing BRK IMPLIED (0x00)" =
 ;;
 
 let%expect_test "testing IRQ masked" =
-  let cycles = 7 in
-  let pgm = [ 0xEA ] in
+  let cycles = 2 in
+  let pgm = [ 0xEA; 0xEA ] in
   let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
@@ -8812,7 +8831,7 @@ let%expect_test "testing IRQ masked" =
   dump_last_execution_mem executions [ 0x1FB; 0x1FC; 0x1FD; 0x1FE; 0x1FF ];
   [%expect
     {|
-    ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1001 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFE sr: nv-bdIzc pc: 0x1001 inst: NOP
+    ab: 0x1001 db: 0xEA phy2: 0 cycle: 1 rw:  true address: 0x1001 data: 0xEA a: 0x01 x: 0x02 y: 0x03 sp: 0xFE sr: nv-bdIzc pc: 0x1001 inst: NOP
     Mem: 0x01FB : 0x85
     Mem: 0x01FC : 0x84
     Mem: 0x01FD : 0x83
@@ -8822,20 +8841,14 @@ let%expect_test "testing IRQ masked" =
 ;;
 
 let%expect_test "testing IRQ unmasked" =
-  let cycles = 10 in
-  let pgm = [ 0xEA ] in
+  let cycles = 9 in
+  let pgm = [ 0xEA; 0xEA ] in
   let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu =
-        { computer.cpu with
-          irq = true
-        ; a = 0x01
-        ; x = 0x02
-        ; y = 0x03
-        ; sp = 0xFE
-        ; sr = 0b0000_0000
-        }
+        { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFE; sr = 0b0000_0000 }
+    ; cia1 = { computer.cia1 with irqb = false }
     }
   in
   Computer.Mem.write computer.mem 0x01FB 0x85;
@@ -8853,6 +8866,7 @@ let%expect_test "testing IRQ unmasked" =
   Computer.Mem.write computer.mem 0xFFFE 0xFE;
   Computer.Mem.write computer.mem 0xFFFF 0xC0;
   let executions = execute_cycles cycles computer in
+  (* dump_executions executions; *)
   dump_last_execution executions;
   dump_last_execution_mem executions [ 0x1FB; 0x1FC; 0x1FD; 0x1FE; 0x1FF ];
   [%expect
@@ -8860,7 +8874,7 @@ let%expect_test "testing IRQ unmasked" =
     ab: 0xC0FE db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0xC0FE data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFB sr: nv-bdIzc pc: 0xC0FE inst: BRK
     Mem: 0x01FB : 0x85
     Mem: 0x01FC : 0x04
-    Mem: 0x01FD : 0x02
+    Mem: 0x01FD : 0x00
     Mem: 0x01FE : 0x10
     Mem: 0x01FF : 0x81
     |}]
