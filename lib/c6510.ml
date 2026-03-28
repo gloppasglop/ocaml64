@@ -1,4 +1,4 @@
-module M = struct
+module Cpu = struct
   type instruction =
     | ADC
     | AND
@@ -85,7 +85,7 @@ module M = struct
   [@@warning "-69"]
   (* [@@deriving sexp] *)
 
-  type cpu =
+  type chip =
     { (* Pins *)
       rdy : bool (* Ready *)
     ; irq : bool (* IRQ - Inverted *)
@@ -619,8 +619,8 @@ module M = struct
                  Some
                    { cpu with
                      ir = brk
-                   ; address = pc
-                   ; pc
+                   ; address = pc - 2
+                   ; pc = pc - 2
                    ; sr = cpu.sr lor 0b0000_0100
                    ; rw = true
                    ; cycle = 2
@@ -1280,7 +1280,7 @@ module M = struct
                Some
                  { cpu with
                    (* sr = cpu.data land 0b1100_1111 *)
-                   sr = cpu.data lor 0b0011_0000
+                   sr = cpu.data lor 0b0011_0000 land 0b1110_1111
                  ; address = cpu.pc
                  ; rw = true
                  ; cycle = 1
@@ -1749,7 +1749,7 @@ module M = struct
                let address =
                  if cpu.reset then 0xFFFC else if cpu.nmi then 0xFFFA else 0xFFFE
                in
-               Some { cpu with address; sp; reset = false; sr; rw = true; cycle = 6 }
+               Some { cpu with address; sp; sr; rw = true; cycle = 6 }
              | RTS ->
                let pch = cpu.data in
                let pc = (pch lsl 8) lor cpu.pcl in
@@ -2021,7 +2021,8 @@ module M = struct
                let address =
                  if cpu.reset then 0xFFFD else if cpu.nmi then 0xFFFB else 0xFFFF
                in
-               Some { cpu with address; pcl = cpu.data; rw = true; cycle = 7 }
+               Some
+                 { cpu with address; reset = false; pcl = cpu.data; rw = true; cycle = 7 }
              | RTS ->
                let pc = cpu.pc + 1 in
                Some { cpu with pc; address = pc; rw = true; cycle = 1 }

@@ -1,14 +1,15 @@
 open Base
 open Stdio
-open Ocaml64.C64
 open Mosaic
 
 let usage_msg = "program [--tui ] [--replay <replay_file>]"
 let arg_tui = ref false
+let arg_record = ref false
 let arg_replay_file = ref ""
 
 let speclist =
   [ "--tui", Stdlib.Arg.Set arg_tui, "Run TUI mode"
+  ; "--record", Stdlib.Arg.Set arg_record, "Enable recording"
   ; "--replay", Stdlib.Arg.Set_string arg_replay_file, "Emulator replay file"
   ; "-r", Stdlib.Arg.Set_string arg_replay_file, "Emulator replay file"
   ]
@@ -17,7 +18,8 @@ let speclist =
 let anon_arg _ = ()
 let () = Stdlib.Arg.parse speclist anon_arg usage_msg
 
-open Ocaml64.C6510.M
+module Computer = Ocaml64.C64.Computer
+open Ocaml64.C6510
 
 module Trace = struct
   open Bigarray
@@ -188,7 +190,9 @@ module Trace = struct
     done
   ;;
 
-  let pack_computer (computer : M.t) =
+  module Computer = Ocaml64.C64.Computer
+
+  let pack_computer (computer : Ocaml64.C64.Computer.t) =
     let pins =
       (if computer.cpu.rw then 0b1000_0000 else 0b0000_0000)
       lor (if computer.cpu.irq then 0b0100_0000 else 0b0000_0000)
@@ -326,42 +330,43 @@ module Trace = struct
     let phy2 = pins land 0b0000_0010 = 0b0000_0010 in
     let rdy = pins land 0b0000_0001 = 0b0000_0001 in
     let cpu =
-      { sp
-      ; a
-      ; x
-      ; y
-      ; sr
-      ; cycle
-      ; data
-      ; pch
-      ; pcl
-      ; address
-      ; ioport
-      ; pc
-      ; rw
-      ; irq
-      ; nmi
-      ; aec
-      ; reset
-      ; phy1
-      ; phy2
-      ; rdy
-      ; ir =
-          (match decode opcode with
-           | None ->
-             raise (Invalid_argument (Printf.sprintf "Invalid opcode %02X" opcode))
-           | Some ir -> ir)
-      }
+      Cpu.
+        { sp
+        ; a
+        ; x
+        ; y
+        ; sr
+        ; cycle
+        ; data
+        ; pch
+        ; pcl
+        ; address
+        ; ioport
+        ; pc
+        ; rw
+        ; irq
+        ; nmi
+        ; aec
+        ; reset
+        ; phy1
+        ; phy2
+        ; rdy
+        ; ir =
+            (match decode opcode with
+             | None ->
+               raise (Invalid_argument (Printf.sprintf "Invalid opcode %02X" opcode))
+             | Some ir -> ir)
+        }
     in
-    let bus = Ocaml64.C64.M.{ address = bus_address; data = bus_data } in
+    let bus = Ocaml64.C64.Computer.{ address = bus_address; data = bus_data } in
     bus, cpu, operand
   ;;
 
-  let record to_swapper from_swapper t (previous : M.t option) (current : M.t) =
-    let active = t.active in
-    if active.cursor < t.max_cycles
+  let record to_swapper from_swapper buffer previous current =
+    let active = buffer.active in
+    if active.cursor < buffer.max_cycles
     then (
-      let index = t.active.cursor * 3 in
+      let index = buffer.active.cursor * 3 in
       let ppack1, ppack2, ppack3 =
         match previous with
         | None -> 0L, 0L, 0L
@@ -378,36 +383,40 @@ module Trace = struct
     else (
       printf "Swapping %d\n%!" active.cursor;
       let pack1, pack2, pack3 = pack_computer current in
-      Domainslib.Chan.send to_swapper (Switch (t, (pack1, pack2, pack3)));
+      Domainslib.Chan.send to_swapper (Switch (buffer, (pack1, pack2, pack3)));
       let _ = Domainslib.Chan.recv from_swapper in
       ())
   ;;
 end
 
-let init_test_computer =
-  let mem = Array.create ~len:65536 0xFF in
-  M.create mem
-;;
+let program_ram = None
+let kernal_rom = Some "kernal-901227-03.bin"
+let basic_rom = Some "basic-901226-01.bin"
+let chargen_rom = Some "chargen-901225-01.bin"
+let mem = Computer.Mem.create program_ram basic_rom kernal_rom chargen_rom
+let init_test_computer = Computer.create mem
 
 (* let _dump_executions = List.iter ~f:dump_execution *)
 
 (* let dump_last_execution executions = List.hd_exn executions |> dump_execution *)
 let computer = init_test_computer
-let mem = computer.banks
 
 let computer =
   { computer with
-    cpu = { computer.cpu with reset = false; pc = 0x400; address = 0x0400; data = 0xd8 }
+    cpu = { computer.cpu with reset = true; pc = 0x400; address = 0x0400; data = 0xd8 }
   ; bus = { address = 0x0400; data = 0xD8 }
   }
 ;;
 
-let load_bin_pgm pgm mem = String.iteri pgm ~f:(fun i byte -> mem.(i) <- Char.to_int byte)
-let pgm = In_channel.read_all "program.bin"
+(* let load_bin_pgm pgm mem = *)
+(* String.iteri pgm ~f:(fun i byte -> Computer.Mem.write mem i (Char.to_int byte)) *)
+(* ;; *)
+
+(* let pgm = In_channel.read_all "program.bin" *)
 
 (* let pgm1 = [ 0xA9; 0x01; 0xA2; 0x02; 0xA0; 0x03; 0x6C; 0x44; 0x69; 0xEA ] *)
 (* let pgm1 = [ 0x00; 0xEA ] *)
-let () = load_bin_pgm pgm mem
+(* let () = load_bin_pgm pgm mem *)
 
 module type CircularBuffer = sig
   type 'a t
@@ -433,7 +442,7 @@ module CircularBuffer : CircularBuffer = struct
 
   (* let tail buffer = buffer.tail *)
   (* let capacity = 256 *)
-  let capacity = 64
+  let capacity = 32
   let mask = capacity - 1
 
   (* let length buffer = buffer.head - buffer.tail *)
@@ -465,10 +474,11 @@ type model =
   { running : bool
   ; tick : int
   ; step : int
-  ; computer : M.t
-  ; executions : (int * M.t) CircularBuffer.t
+  ; computer : Ocaml64.C64.Computer.t
+  ; executions : (int * Ocaml64.C64.Computer.t) CircularBuffer.t
   ; status : status
   ; memory_dump_start : int
+  ; memory_dump_start_input : string
   ; buffer : Trace.double_buffer
   ; to_swapper : Trace.message Domainslib.Chan.t
   ; from_swapper : Trace.double_buffer Domainslib.Chan.t
@@ -481,7 +491,6 @@ type msg =
   | Tick of float
   | Step of int
   | Set_memory_dump_start of string
-  | Submit
   | Toggle_IRQ
   | Toggle_NMI
   | Toggle_RES
@@ -496,7 +505,8 @@ let init () =
     ; computer
     ; executions
     ; status = OK
-    ; memory_dump_start = 0x01FF
+    ; memory_dump_start = 0x0400
+    ; memory_dump_start_input = "400"
     ; buffer = Trace.create 2_000_000
     ; to_swapper = Domainslib.Chan.make_bounded 1
     ; from_swapper = Domainslib.Chan.make_bounded 1
@@ -510,16 +520,18 @@ let loop model =
     then model
     else (
       let tick = model.tick + 1 in
-      match M.fetch_decode_execute model.computer with
+      match Ocaml64.C64.Computer.fetch_decode_execute model.computer with
       | None -> { model with status = ERROR }
       | Some computer ->
         CircularBuffer.add (tick, computer) model.executions;
-        Trace.record
-          model.to_swapper
-          model.from_swapper
-          model.buffer
-          (Some model.computer)
-          computer;
+        if !arg_record
+        then
+          Trace.record
+            model.to_swapper
+            model.from_swapper
+            model.buffer
+            (Some model.computer)
+            computer;
         aux (n - 1) { model with tick; computer; status = OK })
   in
   aux model.step model
@@ -531,15 +543,38 @@ let update msg model =
   | Pause -> { model with running = not model.running }, Cmd.none
   | Next -> loop model, Cmd.none
   | Quit -> model, Cmd.quit
-  | Submit -> model, Cmd.none
   | Step s when s >= 1 && s <= 9 -> { model with step = 10 ** (s - 1) }, Cmd.none
   | Step _ -> model, Cmd.none
   | Set_memory_dump_start v ->
-    let memory_dump_start =
-      try Int.of_string v with
-      | _ -> model.memory_dump_start
+    let new_memory_dump_start =
+      try Int.of_string ("0x" ^ v) with
+      | _ ->
+        printf "%s is not a valid number. Should reset to %X\n" v model.memory_dump_start;
+        model.memory_dump_start
     in
-    { model with memory_dump_start }, Cmd.none
+    let memory_dump_start =
+      if new_memory_dump_start < 0 || new_memory_dump_start > 0xFFFF
+      then (
+        printf
+          "Negatrve or too big number : %s %X => keep %X\n"
+          v
+          new_memory_dump_start
+          model.memory_dump_start;
+        model.memory_dump_start)
+      else new_memory_dump_start
+    in
+    printf "Set_memory_dump_start : %X \n" memory_dump_start;
+    ( { model with
+        memory_dump_start
+      ; memory_dump_start_input = Printf.sprintf "%X" memory_dump_start
+      }
+    , Cmd.none )
+    (* | Submit_memory_dump_start v -> *)
+    (* let memory_dump_start = *)
+    (* try Int.of_string v with *)
+    (* | _ -> model.memory_dump_start *)
+    (* in *)
+    (* { model with memory_dump_start }, Cmd.none *)
   | Toggle_IRQ ->
     ( { model with
         computer =
@@ -581,18 +616,18 @@ let muted = Ansi.Style.make ~fg:(Ansi.Color.grayscale ~level:16) ()
 let hint = Ansi.Style.make ~fg:(Ansi.Color.grayscale ~level:14) ()
 
 let _columns =
-  [ Table.column ~header:(Table.cell "Cycle") ~width:(`Fixed 16) ~justify:`Left "cycle/h"
-  ; Table.column ~header:(Table.cell "AB") ~width:(`Fixed 6) ~justify:`Left "AB"
-  ; Table.column ~header:(Table.cell "DB") ~width:(`Fixed 4) ~justify:`Right "DB"
-  ; Table.column ~header:(Table.cell "PC") ~width:(`Fixed 6) ~justify:`Right "PC"
-  ; Table.column ~header:(Table.cell "OP") ~width:(`Fixed 8) ~justify:`Center "OP"
-  ; Table.column ~header:(Table.cell "A") ~width:(`Fixed 4) ~justify:`Center "A"
-  ; Table.column ~header:(Table.cell "X") ~width:(`Fixed 4) ~justify:`Center "X"
-  ; Table.column ~header:(Table.cell "Y") ~width:(`Fixed 4) ~justify:`Center "Y"
+  [ Table.column ~width:(`Fixed 16) ~alignment:`Left "cycle/h"
+  ; Table.column ~width:(`Fixed 6) ~alignment:`Left "AB"
+  ; Table.column ~width:(`Fixed 4) ~alignment:`Right "DB"
+  ; Table.column ~width:(`Fixed 6) ~alignment:`Right "PC"
+  ; Table.column ~width:(`Fixed 8) ~alignment:`Center "OP"
+  ; Table.column ~width:(`Fixed 4) ~alignment:`Center "A"
+  ; Table.column ~width:(`Fixed 4) ~alignment:`Center "X"
+  ; Table.column ~width:(`Fixed 4) ~alignment:`Center "Y"
   ]
 ;;
 
-let computer_to_row cycle (computer : M.t) =
+let computer_to_row cycle (computer : Ocaml64.C64.Computer.t) =
   Printf.sprintf
     "%12d/%1d %4s %2s %04X %02X %04X %02X %02X %02X %02X %02X %8s %-11s"
     cycle
@@ -607,8 +642,8 @@ let computer_to_row cycle (computer : M.t) =
     computer.cpu.y
     computer.cpu.sp
     computer.cpu.sr
-    (sr_to_string computer.cpu.sr)
-    (inst_to_string computer.cpu.ir.inst computer.cpu.ir.mode computer.operand)
+    (Cpu.sr_to_string computer.cpu.sr)
+    (Cpu.inst_to_string computer.cpu.ir.inst computer.cpu.ir.mode computer.operand)
 ;;
 
 let border_color = Ansi.Color.grayscale ~level:8
@@ -645,9 +680,8 @@ let trace model =
         ~flex_direction:Column
         ~border_color
         ~gap:(gap 0)
-        ~size:{ width = pct 100; height = pct 100 }
-        [ box
-            ~flex_grow:0.
+        ~size:{ width = pct 100; height = auto }
+        [ box (* ~flex_grow:1. *)
             ~padding:(padding 0)
             [ text "       Cycles/h SYNC RW AB   DB PC   A  X  Y  SP SR Flags    Asm" ]
         ; box
@@ -656,20 +690,15 @@ let trace model =
             [ scroll_box
                 ~scroll_y:true
                 ~scroll_x:false
-                ~sticky_scroll:true
-                ~sticky_start:`Bottom
+                  (* ~sticky_scroll:true *)
+                  (* ~sticky_start:`Bottom *)
+                ~min_size:{ width = px 0; height = px 0 }
                 ~size:{ width = pct 100; height = pct 100 }
                 (let start = CircularBuffer.head model.executions in
                  List.mapi
                    (CircularBuffer.to_list model.executions)
                    ~f:(fun i (tick, computer) ->
                      let cycle = start + i in
-                     (* Stdio.eprintf *)
-                     (* "Start: %10d i: %4d cycle: %10d - %s\n" *)
-                     (* start *)
-                     (* i *)
-                     (* cycle *)
-                     (* (computer_to_row tick computer); *)
                      box
                        ~key:(Int.to_string cycle)
                        ~padding:(padding 0)
@@ -685,132 +714,196 @@ let trace model =
 
 let cpu_controls model =
   box
-    ~border:true
-    ~title:"CPU Controls"
-    ~padding:(padding 1)
+    ~border:false
+    ~padding:(padding 0)
     ~flex_direction:Column
     ~size:{ width = auto; height = pct 100 }
     [ box
+        ~border:true
+        ~title:"CPU Controls"
+        ~padding:(padding 1)
         ~flex_direction:Column
-        ~gap:(gap 1)
-        ~size:{ width = pct 100; height = auto }
-        [ text (Printf.sprintf "Step size: %d" model.step) ]
-    ; box
-        ~flex_direction:Column
-        ~gap:(gap 0)
-        ~size:{ width = pct 100; height = auto }
+        ~size:{ width = auto; height = pct 100 }
         [ box
+            ~flex_direction:Column
+            ~gap:(gap 1)
+            ~size:{ width = pct 100; height = auto }
+            [ text (Printf.sprintf "Step size: %d" model.step) ]
+        ; box
+            ~flex_direction:Column
+            ~gap:(gap 0)
+            ~size:{ width = pct 100; height = auto }
+            [ box
+                ~flex_direction:Row
+                ~gap:(gap 0)
+                [ box ~border:true ~padding:(padding 1) [ text "|<" ]
+                ; box
+                    ~border:true
+                    ~padding:(padding 1)
+                    [ text (if model.running then "||" else "> ") ]
+                ; box ~border:true ~padding:(padding 1) [ text ">|" ]
+                ; box ~border:true ~padding:(padding 1) [ text ">>|" ]
+                ; box ~border:true ~padding:(padding 1) [ text "->" ]
+                ; box ~border:true ~padding:(padding 1) [ text "@" ]
+                ]
+            ]
+        ; box
             ~flex_direction:Row
             ~gap:(gap 0)
-            [ box ~border:true ~padding:(padding 1) [ text "|<" ]
+            ~padding:(padding 0)
+            (* ~justify_items:Start *)
+            [ box
+                ~padding:(padding 1)
+                ~flex_direction:Column
+                [ text "Status:"; text "Addr:"; text "Data:"; text "PC" ]
+            ; box
+                ~align_items:End
+                ~padding:(padding 1)
+                ~flex_direction:Column
+                [ text
+                    (match model.status with
+                     | OK -> "OK"
+                     | ERROR -> "KO")
+                ; text (Printf.sprintf "0x%04X" model.computer.cpu.address)
+                ; text (Printf.sprintf "0x%02X" model.computer.cpu.data)
+                ; text (Printf.sprintf "0x%04X" model.computer.cpu.pc)
+                ]
+            ; box
+                ~padding:(padding 1)
+                ~flex_direction:Column
+                [ text "Cycle:"; text "A:"; text "X:"; text "Y:" ]
+            ; box
+                ~align_items:End
+                ~padding:(padding 1)
+                ~flex_direction:Column
+                [ text (Printf.sprintf "%d" model.computer.cpu.cycle)
+                ; text (Printf.sprintf "0x%02X" model.computer.cpu.a)
+                ; text (Printf.sprintf "0x%02X" model.computer.cpu.x)
+                ; text (Printf.sprintf "0x%02X" model.computer.cpu.y)
+                ]
+            ; box
+                ~padding:(padding 1)
+                ~flex_direction:Column
+                [ text "ASM:"; text "FLags:"; text "SR:"; text "SP:" ]
+            ; box
+                ~align_items:End
+                ~padding:(padding 1)
+                ~flex_direction:Column
+                [ text
+                    (Printf.sprintf
+                       "%11s"
+                       (Cpu.inst_to_string
+                          model.computer.cpu.ir.inst
+                          model.computer.cpu.ir.mode
+                          model.computer.operand))
+                ; text (Printf.sprintf "%8s" (Cpu.sr_to_string model.computer.cpu.sr))
+                ; text (Printf.sprintf "0x%02X" model.computer.cpu.sr)
+                ; text (Printf.sprintf "0x%02X" model.computer.cpu.sp)
+                ]
+            ]
+        ; box
+            ~flex_direction:Row
+            ~gap:(gap 1)
+            [ box
+                ~border:true
+                ~padding:(padding 1)
+                ~on_mouse:(fun ev ->
+                  match Event.Mouse.kind ev with
+                  | Down _ -> Some Toggle_RDY
+                  | _ -> None)
+                [ text
+                    (Printf.sprintf
+                       "[%s] RDY"
+                       (if model.computer.cpu.rdy then "X" else " "))
+                ]
             ; box
                 ~border:true
                 ~padding:(padding 1)
-                [ text (if model.running then "||" else "> ") ]
-            ; box ~border:true ~padding:(padding 1) [ text ">|" ]
-            ; box ~border:true ~padding:(padding 1) [ text ">>|" ]
-            ; box ~border:true ~padding:(padding 1) [ text "->" ]
-            ; box ~border:true ~padding:(padding 1) [ text "@" ]
+                ~on_mouse:(fun ev ->
+                  match Event.Mouse.kind ev with
+                  | Down _ -> Some Toggle_IRQ
+                  | _ -> None)
+                [ text
+                    (Printf.sprintf
+                       "[%s] IRQ"
+                       (if model.computer.cpu.irq then "X" else " "))
+                ]
+            ; box
+                ~border:true
+                ~padding:(padding 1)
+                ~on_mouse:(fun ev ->
+                  match Event.Mouse.kind ev with
+                  | Down _ -> Some Toggle_NMI
+                  | _ -> None)
+                [ text
+                    (Printf.sprintf
+                       "[%s] NMI"
+                       (if model.computer.cpu.nmi then "X" else " "))
+                ]
+            ; box
+                ~border:true
+                ~padding:(padding 1)
+                ~on_mouse:(fun ev ->
+                  match Event.Mouse.kind ev with
+                  | Down _ -> Some Toggle_RES
+                  | _ -> None)
+                [ text
+                    (Printf.sprintf
+                       "[%s] RES"
+                       (if model.computer.cpu.reset then "X" else " "))
+                ]
             ]
         ]
     ; box
-        ~flex_direction:Row
-        ~gap:(gap 0)
-        ~padding:(padding 0)
-        (* ~justify_items:Start *)
+        ~border:true
+        ~title:"CIA 1"
+        ~padding:(padding 1)
+        ~flex_direction:Column
+        ~size:{ width = auto; height = pct 100 }
         [ box
-            ~padding:(padding 1)
-            ~flex_direction:Column
-            [ text "Status:"; text "Addr:"; text "Data:"; text "PC" ]
-        ; box
-            ~align_items:End
-            ~padding:(padding 1)
-            ~flex_direction:Column
-            [ text
-                (match model.status with
-                 | OK -> "OK"
-                 | ERROR -> "KO")
-            ; text (Printf.sprintf "0x%04X" model.computer.cpu.address)
-            ; text (Printf.sprintf "0x%02X" model.computer.cpu.data)
-            ; text (Printf.sprintf "0x%04X" model.computer.cpu.pc)
-            ]
-        ; box
-            ~padding:(padding 1)
-            ~flex_direction:Column
-            [ text "Cycle:"; text "A:"; text "X:"; text "Y:" ]
-        ; box
-            ~align_items:End
-            ~padding:(padding 1)
-            ~flex_direction:Column
-            [ text (Printf.sprintf "%d" model.computer.cpu.cycle)
-            ; text (Printf.sprintf "0x%02X" model.computer.cpu.a)
-            ; text (Printf.sprintf "0x%02X" model.computer.cpu.x)
-            ; text (Printf.sprintf "0x%02X" model.computer.cpu.y)
-            ]
-        ; box
-            ~padding:(padding 1)
-            ~flex_direction:Column
-            [ text "ASM:"; text "FLags:"; text "SR:"; text "SP:" ]
-        ; box
-            ~align_items:End
-            ~padding:(padding 1)
-            ~flex_direction:Column
-            [ text
-                (Printf.sprintf
-                   "%11s"
-                   (inst_to_string
-                      model.computer.cpu.ir.inst
-                      model.computer.cpu.ir.mode
-                      model.computer.operand))
-            ; text (Printf.sprintf "%8s" (sr_to_string model.computer.cpu.sr))
-            ; text (Printf.sprintf "0x%02X" model.computer.cpu.sr)
-            ; text (Printf.sprintf "0x%02X" model.computer.cpu.sp)
-            ]
-        ]
-    ; box
-        ~flex_direction:Row
-        ~gap:(gap 1)
-        [ box
-            ~border:true
-            ~padding:(padding 1)
-            ~on_mouse:(fun ev ->
-              match Event.Mouse.kind ev with
-              | Down -> Some Toggle_RDY
-              | _ -> None)
-            [ text
-                (Printf.sprintf "[%s] RDY" (if model.computer.cpu.rdy then "X" else " "))
-            ]
-        ; box
-            ~border:true
-            ~padding:(padding 1)
-            ~on_mouse:(fun ev ->
-              match Event.Mouse.kind ev with
-              | Down -> Some Toggle_IRQ
-              | _ -> None)
-            [ text
-                (Printf.sprintf "[%s] IRQ" (if model.computer.cpu.irq then "X" else " "))
-            ]
-        ; box
-            ~border:true
-            ~padding:(padding 1)
-            ~on_mouse:(fun ev ->
-              match Event.Mouse.kind ev with
-              | Down -> Some Toggle_NMI
-              | _ -> None)
-            [ text
-                (Printf.sprintf "[%s] NMI" (if model.computer.cpu.nmi then "X" else " "))
-            ]
-        ; box
-            ~border:true
-            ~padding:(padding 1)
-            ~on_mouse:(fun ev ->
-              match Event.Mouse.kind ev with
-              | Down -> Some Toggle_RES
-              | _ -> None)
-            [ text
-                (Printf.sprintf
-                   "[%s] RES"
-                   (if model.computer.cpu.reset then "X" else " "))
+            ~flex_direction:Row
+            ~gap:(gap 0)
+            ~padding:(padding 0)
+            (* ~justify_items:Start *)
+            [ box
+                ~padding:(padding 1)
+                ~flex_direction:Column
+                [ text "PRA:"; text "PRB:"; text "DDRA:"; text "DDRB" ]
+            ; box
+                ~align_items:End
+                ~padding:(padding 1)
+                ~flex_direction:Column
+                [ text (Printf.sprintf "0x%02X" model.computer.cia1.pra)
+                ; text (Printf.sprintf "0x%02X" model.computer.cia1.prb)
+                ; text (Printf.sprintf "0x%02X" model.computer.cia1.ddra)
+                ; text (Printf.sprintf "0x%02X" model.computer.cia1.ddrb)
+                ]
+            ; box
+                ~padding:(padding 1)
+                ~flex_direction:Column
+                [ text "TA:"; text "TAL:"; text "TB:"; text "TBL:" ]
+            ; box
+                ~align_items:End
+                ~padding:(padding 1)
+                ~flex_direction:Column
+                [ text (Printf.sprintf "0x%04X" model.computer.cia1.ta)
+                ; text (Printf.sprintf "0x%04X" model.computer.cia1.tal)
+                ; text (Printf.sprintf "0x%04X" model.computer.cia1.tb)
+                ; text (Printf.sprintf "0x%04X" model.computer.cia1.tbl)
+                ]
+            ; box
+                ~padding:(padding 1)
+                ~flex_direction:Column
+                [ text "SDR:"; text "ICR:"; text "CRA:"; text "CRB:" ]
+            ; box
+                ~align_items:End
+                ~padding:(padding 1)
+                ~flex_direction:Column
+                [ text (Printf.sprintf "0x%02X" model.computer.cia1.sdr)
+                ; text (Printf.sprintf "0x%02X" model.computer.cia1.icr)
+                ; text (Printf.sprintf "0x%02X" model.computer.cia1.cra)
+                ; text (Printf.sprintf "0x%02X" model.computer.cia1.crb)
+                ]
             ]
         ]
     ]
@@ -826,14 +919,14 @@ let memory_to_row8 start mem =
         (Printf.sprintf
            "%04X %02X %02X %02X %02X %02X %02X %02X %02X"
            start_row_addr
-           mem.(start_row_addr)
-           mem.(start_row_addr + 1)
-           mem.(start_row_addr + 2)
-           mem.(start_row_addr + 3)
-           mem.(start_row_addr + 4)
-           mem.(start_row_addr + 5)
-           mem.(start_row_addr + 6)
-           mem.(start_row_addr + 7)
+           (Computer.Mem.read mem start_row_addr)
+           (Computer.Mem.read mem (start_row_addr + 1))
+           (Computer.Mem.read mem (start_row_addr + 2))
+           (Computer.Mem.read mem (start_row_addr + 3))
+           (Computer.Mem.read mem (start_row_addr + 4))
+           (Computer.Mem.read mem (start_row_addr + 5))
+           (Computer.Mem.read mem (start_row_addr + 6))
+           (Computer.Mem.read mem (start_row_addr + 7))
          :: acc)
         (n - 1))
   in
@@ -853,11 +946,16 @@ let memory model =
         ~gap:(gap 1)
         [ box ~size:{ width = auto; height = px 1 } [ text "Memory Address:" ]
         ; input
+            ~focused_background_color:Ansi.Color.Red
+            ~cursor_blinking:true
             ~id:"Memory Start"
             ~placeholder:"Enter Memory address (hex)"
             ~size:{ width = px 25; height = px 1 }
-            ~value:(Int.to_string model.memory_dump_start)
+            ~value:model.memory_dump_start_input
             ~on_input:(fun v -> Some (Set_memory_dump_start v))
+            ~on_submit:(fun v ->
+              printf "Submitting %s\n" v;
+              Some (Set_memory_dump_start v))
             ()
         ]
     ; box
@@ -872,7 +970,9 @@ let memory model =
                 ~scroll_y:true
                 ~scroll_x:false
                 ~size:{ width = pct 100; height = pct 100 }
-                (let mem_rows = memory_to_row8 0x0100 model.computer.banks in
+                (let mem_rows =
+                   memory_to_row8 model.memory_dump_start model.computer.mem
+                 in
                  List.map mem_rows ~f:(fun str -> box ~padding:(padding 0) [ text str ]))
             ]
         ]
@@ -902,7 +1002,6 @@ let subscriptions _model =
         match (Mosaic_ui.Event.Key.data ev).key with
         | Char c when Uchar.equal c (Uchar.of_char 's') -> Some Next
         | Right -> Some Next
-        | Enter -> Some Submit
         | Char c when Uchar.equal c (Uchar.of_char '1') -> Some (Step 1)
         | Char c when Uchar.equal c (Uchar.of_char '2') -> Some (Step 2)
         | Char c when Uchar.equal c (Uchar.of_char '3') -> Some (Step 3)
@@ -923,26 +1022,12 @@ let subscriptions _model =
 (* let buff = Trace.create 2_000_000 *)
 let buff = Trace.create 10_000_000
 
-let _dump_execution n (previous : M.t option) (computer : M.t) =
-  match previous with
-  | None -> failwith "Impossible"
-  | Some previous ->
-    let ppack1, ppack2, ppack3 = Trace.pack_computer previous in
-    let pack1, pack2, pack3 = Trace.pack_computer computer in
-    printf
-      (* "%10d %016LX %016LX %016LX %016LX %016LX ab: 0x%04X db: 0x%02X %s\n" *)
-      "%10d %016LX %016LX %016LX ab: 0x%04X db: 0x%02X %s\n"
-      (* "%10d ab: 0x%04X db: 0x%02X %s\n" *)
-      n
-      (* (Int64.to_string pack1) *)
-      (* ppack3 *)
-      (* pack3 *)
-      (Int64.bit_xor ppack1 pack1)
-      (Int64.bit_xor ppack2 pack2)
-      (Int64.bit_xor ppack3 pack3)
-      computer.bus.address
-      computer.bus.data
-      (Ocaml64.C6510.M.cpu_to_string computer.cpu computer.operand)
+let dump_execution (computer : Computer.t) =
+  printf
+    "ab: 0x%04X db: 0x%02X %s\n%!"
+    computer.bus.address
+    computer.bus.data
+    (Cpu.cpu_to_string computer.cpu computer.operand)
 ;;
 
 (* Trace.record buff previous computer *)
@@ -956,37 +1041,35 @@ let execute_cycles to_swapper from_swapper cycles computer =
   let rec aux n c =
     if n = 0
     then (
-      (* TODO: CHeck if we really need this when we exit *)
-      (* We need to make sure we save the last state *)
-      Chan.send to_swapper (Trace.Terminate buff);
-      (*TODO receive should get the status *)
-      let _ = Chan.recv from_swapper in
-      ())
+      if !arg_record
+      then (
+        Chan.send to_swapper (Trace.Terminate buff);
+        let _ = Chan.recv from_swapper in
+        ()))
     else (
-      let computer' = M.fetch_decode_execute c in
+      let computer' = Ocaml64.C64.Computer.fetch_decode_execute c in
       match computer' with
       | None ->
-        Chan.send to_swapper (Trace.Terminate buff);
-        (*TODO receive should get the status *)
-        let _ = Chan.recv from_swapper in
-        ();
+        if !arg_record
+        then (
+          Chan.send to_swapper (Trace.Terminate buff);
+          let _ = Chan.recv from_swapper in
+          ());
         failwith "TODO: Received None computer\n"
-      (* TODO: CHeck fi we really need this when we exit *)
-      (* Chan.send to_swapper buff; *)
-      (* let _ = Chan.recv from_swapper in *)
-      (* () *)
       | Some c' ->
-        (* dump_execution n (Some c) c'; *)
-        Trace.record to_swapper from_swapper buff (Some c) c';
+        dump_execution c';
+        if !arg_record then Trace.record to_swapper from_swapper buff (Some c) c';
         aux (n - 1) c')
   in
-  (* dump_execution 0 None computer; *)
-  Trace.record to_swapper from_swapper buff None computer;
+  dump_execution computer;
+  if !arg_record then Trace.record to_swapper from_swapper buff None computer;
   aux half_cycles computer;
-  Chan.send to_swapper (Trace.Terminate buff);
-  (*TODO receive should get the status *)
-  let _ = Chan.recv from_swapper in
-  ()
+  if !arg_record
+  then (
+    Chan.send to_swapper (Trace.Terminate buff);
+    (*TODO receive should get the status *)
+    let _ = Chan.recv from_swapper in
+    ())
 ;;
 
 let () =
@@ -1019,7 +1102,7 @@ let () =
       let u3 = Int64.bit_xor uncompressed_data.{(3 * i) + 2} !prev3 in
       let _, cpu, operand = Trace.unpack_computer (u1, u2, u3) in
       printf "%016LX %016LX %016LX\t" u1 u2 u3;
-      printf "%s\n" (cpu_to_string cpu operand);
+      printf "%s\n" (Cpu.cpu_to_string cpu operand);
       prev1 := u1;
       prev2 := u2;
       prev3 := u3

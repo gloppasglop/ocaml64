@@ -1,24 +1,159 @@
 open Base
 open Stdio
 
-module M = struct
-  open C6510.M
+module Computer = struct
+  open C6510.Cpu
+  open Cia
 
   type bus =
     { data : int
     ; address : int
     }
 
-  type memory_banks = int array
+  module type MMU = sig
+    type t
+
+    val create : string option -> string option -> string option -> string option -> t
+    val read : t -> int -> int
+    val write : t -> int -> int -> unit
+  end
+
+  module Mem : MMU = struct
+    type t =
+      { ram : int array
+      ; basic : int array
+      ; kernal : int array
+      ; chargen : int array
+      }
+
+    (* TODO: Adjust sizes *)
+    (* TODO: Check out of bound writes *)
+    let load_bin filename arr =
+      match filename with
+      | None -> arr
+      | Some filename ->
+        let data = In_channel.read_all filename in
+        String.iteri data ~f:(fun i byte -> arr.(i) <- Char.to_int byte);
+        arr
+    ;;
+
+    let create ram_file basic_rom_file kernal_rom_file chargen_rom_file =
+      { ram = load_bin ram_file (Array.create ~len:65536 0xFF)
+      ; basic = load_bin basic_rom_file (Array.create ~len:8192 0xFF)
+      ; kernal = load_bin kernal_rom_file (Array.create ~len:8192 0xFF)
+      ; chargen = load_bin chargen_rom_file (Array.create ~len:4096 0xFF)
+      }
+    ;;
+
+    (* | p when page < 16 -> failwith "TODO" *)
+    (* | p when page < 128 -> failwith "TODO" *)
+    (* | p when page < 160 -> failwith "TODO" *)
+    (* | p when page < 192 -> failwith "TODO" *)
+    (* | p when page < 208 -> failwith "TODO" *)
+    (* | p when page < 224 -> failwith "TODO" *)
+    (* | p when page < 256 -> failwith "TODO" *)
+
+    let read mem i =
+      let cpu_control_lines = mem.ram.(1) land 0b0000_0111 in
+      let page = i land 0xFF00 in
+      match cpu_control_lines with
+      | 0b0111 ->
+        (match page with
+         | p when p < 0xA000 -> mem.ram.(i)
+         | p when p < 0xC000 -> mem.basic.(i - 0xA000)
+         | p when p < 0xD000 -> mem.ram.(i)
+         (* TODO Remove temporary hack to put all VI-II to 0*)
+         (* | p when p < 0xE000 -> failwith "READ FROM I/O DEVICES" *)
+         | p when p < 0xE000 -> mem.ram.(i)
+         | p when p < 0x10000 -> mem.kernal.(i - 0xE000)
+         | _ -> failwith "Impossible page cannot be greater than 255")
+      | 0b0110 ->
+        (match page with
+         | p when p < 0xD000 -> mem.ram.(i)
+         (* | p when p < 0xE000 -> failwith "READ FROM I/O DEVICES" *)
+         | p when p < 0xE000 -> mem.ram.(i)
+         | p when p < 0x10000 -> mem.kernal.(i - 0xE000)
+         | _ -> failwith "Impossible page cannot be greater than 255")
+      | 0b0101 ->
+        (match page with
+         | p when p < 0xD000 -> mem.ram.(i)
+         (* | p when p < 0xE000 -> failwith "READ FROM I/O DEVICES" *)
+         | p when p < 0xE000 -> mem.ram.(i)
+         | p when p < 0x10000 -> mem.ram.(i)
+         | _ -> failwith "Impossible page cannot be greater than 255")
+      | 0b0100 -> mem.ram.(i)
+      | 0b0011 ->
+        (match page with
+         | p when p < 0xA000 -> mem.ram.(i)
+         | p when p < 0xC000 -> mem.basic.(i - 0xA000)
+         | p when p < 0xD000 -> mem.ram.(i)
+         | p when p < 0xE000 -> mem.chargen.(i - 0xD000)
+         | p when p < 0x10000 -> mem.kernal.(i - 0xE000)
+         | _ -> failwith "Impossible page cannot be greater than 255")
+      | 0b0010 ->
+        (match page with
+         | p when p < 0xD000 -> mem.ram.(i)
+         | p when p < 0xE000 -> mem.chargen.(i - 0xD000)
+         | p when p < 0x10000 -> mem.kernal.(i - 0xE000)
+         | _ -> failwith "Impossible page cannot be greater than 255")
+      | 0b0001 ->
+        (match page with
+         | p when p < 0xD000 -> mem.ram.(i)
+         | p when p < 0xE000 -> mem.chargen.(i - 0xD000)
+         | p when p < 0x10000 -> mem.ram.(i)
+         | _ -> failwith "Impossible page cannot be greater than 255")
+      | 0b0000 -> mem.ram.(i)
+      | _ ->
+        failwith
+          (Printf.sprintf
+             "Impossible value for cpu control line : %04X"
+             cpu_control_lines)
+    ;;
+
+    let write mem i value =
+      let cpu_control_lines = mem.ram.(1) land 0b0000_0111 in
+      let page = i land 0xFF00 in
+      match cpu_control_lines with
+      | 0b0111 ->
+        (match page with
+         | p when p < 0xD000 -> mem.ram.(i) <- value
+         (* | p when p < 0xE000 -> failwith "WRITE TO I/O DEVICES" *)
+         | p when p < 0xE000 -> mem.ram.(i) <- value
+         | p when p < 0x10000 -> mem.ram.(i) <- value
+         | _ -> failwith "Impossible page cannot be greater than 255")
+      | 0b0110 ->
+        (match page with
+         | p when p < 0xD000 -> mem.ram.(i) <- value
+         (* | p when p < 0xE000 -> failwith "WRITE TO I/O DEVICES" *)
+         | p when p < 0xE000 -> mem.ram.(i) <- value
+         | p when p < 0x10000 -> mem.ram.(i) <- value
+         | _ -> failwith "Impossible page cannot be greater than 255")
+      | 0b0101 ->
+        (match page with
+         | p when p < 0xD000 -> mem.ram.(i) <- value
+         (* | p when p < 0xE000 -> failwith "WRITE TO I/O DEVICES" *)
+         | p when p < 0xE000 -> mem.ram.(i) <- value
+         | p when p < 0x10000 -> mem.ram.(i) <- value
+         | _ -> failwith "Impossible page cannot be greater than 255")
+      | 0b0100 | 0b0011 | 0b0010 | 0b0001 | 0b0000 -> mem.ram.(i) <- value
+      | _ ->
+        failwith
+          (Printf.sprintf
+             "Impossible value for cpu control line : %04X"
+             cpu_control_lines)
+    ;;
+  end
 
   type t =
-    { cpu : cpu
+    { cpu : chip
     ; operand : int
     ; bus : bus
-    ; banks : memory_banks
+    ; mem : Mem.t
+    ; cia1 : Cia.chip
+    ; cia2 : Cia.chip
     }
 
-  let create banks =
+  let create mem =
     { cpu =
         { rdy = true
         ; irq = false
@@ -47,90 +182,39 @@ module M = struct
         }
         (* End of CPU record *)
     ; bus = { address = 0x00FF; data = 0x00 }
-    ; banks
+    ; mem
     ; operand = 0x0000
+    ; cia1 = Cia.create 1
+    ; cia2 = Cia.create 2
     }
   ;;
 
-  (* This is now wrong! *)
-
-  (* module C64 : Computer = struct *)
-
-  (* type memory_banks = int array *)
-
-  (* type cpu = Cpu.C6510 *)
-
-  (* in the future there will be multiple memory banks *)
-
-  (* type t = *)
-  (* { cpu : cpu *)
-  (* ; bus : bus *)
-  (* ; banks : memory_banks *)
-  (* } *)
-
-  (* let create banks = *)
-  (* let cpu = *)
-  (* { (* Pins *) *)
-  (* rdy = true (* Ready *) *)
-  (* ; irq = false (* IRQ - Inverted *) *)
-  (* ; nmi = false (* Non Maskable Interrrupt - Inverted *) *)
-  (* ; phy1 = true (* phy1 , IN*) *)
-  (* ; phy2 = true (* phy2 , OUT*) *)
-  (* ; aec = true (* Address Enable Control *) *)
-  (* ; rw = true (* R/W Read/Write *) *)
-  (* ; reset = false (* Reset - Inverted *) *)
-  (* ; address = 0x00FF (* Pins A0 to A15 *) *)
-  (* ; data = 0x00 (* Pins DB0 to DB7 *) *)
-  (* ; ioport = 0 (* Pins P0 to  P7 *) *)
-  (* ; a = 0x00 (* A register *) *)
-  (* ; x = 0 (* X register *) *)
-  (* ; y = 0 (* Y register *) *)
-  (* ; sr = 0b0000_0010 (* Status register *) *)
-  (* ; pc = 0x00FF (* Program counter *) *)
-  (* ; sp = 0x00 (* Stack pointer *) *)
-  (* ; ir = *)
-  (* decode 0x00 *)
-  (* Internal instruction register TODO: Should it be directly teh decoded instruction *)
-  (* ; cycle = 1 *)
-  (* } *)
-  (* in *)
-  (* { cpu; bus = { address = 0; data = 0 }; memory_banks = banks } *)
-  (* ;; *)
-
-  (* let boot = *)
-  (* let mem = Array.create ~len:65536 0xFF in *)
-  (* let address = 0x0000 in *)
-  (* let data = 0x00 in *)
-  (* let bus = { data; address } in *)
-  (* let computer = M.create mem in *)
-  (* { computer with *)
-  (* cpu = *)
-  (* { computer.cpu with *)
-  (* a = 0x00 *)
-  (* ; x = 0x00 *)
-  (* ; y = 0x00 *)
-  (* ; sr = 0b0000_0100 *)
-  (* ; sp = 0x00 *)
-  (* ; pc = address *)
-  (* ; address *)
-  (* ; data *)
-  (* } *)
-  (* ; bus *)
-  (* } *)
-  (* ;; *)
-
-  let fetch_decode_execute { cpu; bus; banks; operand } =
+  let fetch_decode_execute { cpu; bus; mem; operand; cia1; cia2 } =
     (* During the first cycle of an struction we need to read from memory we take the value on the bus put it on the data pins of the cpu *)
     (* TODO: Add a mapping function to access the correct bank *)
     let phy2 = cpu.phy2 in
+    (* let bus' = { bus with address = cpu.address } in *)
     let computer =
-      let mem = banks in
       match phy2 with
       | false ->
-        let bus' = { bus with address = cpu.address } in
-        let cpu' = { cpu with phy2 = true } in
-        Some { cpu = cpu'; bus = bus'; banks; operand }
+        let rs = cpu.address land 0x000F in
+        let cia1 =
+          Cia.tick { cia1 with phy2; csb = true; rw = cpu.rw; rs; data = bus.data }
+        in
+        let cia2 =
+          Cia.tick { cia2 with phy2; csb = true; rw = cpu.rw; rs; data = bus.data }
+        in
+        let irq = (not cia1.irqb) || not cia2.irqb in
+        Some
+          { cpu = { cpu with phy2 = true; irq }
+          ; bus = { bus with address = cpu.address }
+          ; mem
+          ; operand
+          ; cia1
+          ; cia2
+          }
       | true ->
+        (* TODO: Handle RDY correctly . See VIC-II timing info*)
         (match cpu.rdy with
          | true ->
            let operand =
@@ -138,8 +222,8 @@ module M = struct
              then (
                (* Read the next two bytes from memory *)
                (* Even if it makes no sense. This is just for debug instruction printing *)
-               let oplow = mem.((bus.address + 1) land 0xFFFF) in
-               let ophigh = mem.((bus.address + 2) land 0xFFFF) in
+               let oplow = Mem.read mem ((bus.address + 1) land 0xFFFF) in
+               let ophigh = Mem.read mem ((bus.address + 2) land 0xFFFF) in
                (ophigh lsl 8) lor oplow)
              else operand
            in
@@ -147,27 +231,120 @@ module M = struct
            (match cpu' with
             | None -> None
             | Some cpu' ->
-              let bus' =
-                match cpu'.rw with
-                | true -> { address = cpu'.address; data = mem.(cpu'.address) }
-                | false ->
-                  mem.(cpu'.address) <- cpu'.data;
-                  { address = cpu'.address; data = cpu'.data }
-              in
-              Some
-                { cpu =
-                    { cpu' with phy2 = false; address = bus'.address; data = bus'.data }
-                ; bus = bus'
-                ; banks
-                ; operand
-                })
-         | false -> Some { operand; cpu; bus; banks = mem })
+              let rs = cpu'.address land 0x000F in
+              (match cpu'.rw with
+               | true ->
+                 let cia1 =
+                   Cia.tick
+                     { cia1 with
+                       phy2
+                     ; csb = not (cpu'.address land 0xFF00 = 0xDC00)
+                     ; rw = cpu'.rw
+                     ; rs
+                     }
+                 in
+                 let cia2 =
+                   Cia.tick
+                     { cia2 with
+                       phy2
+                     ; csb = not (cpu'.address land 0xFF00 = 0xDD00)
+                     ; rw = cpu'.rw
+                     ; rs
+                     }
+                 in
+                 let data =
+                   match cpu'.address with
+                   | 0xDC00 ->
+                     Mem.write mem cpu'.address cia1.data;
+                     cia1.data
+                   | 0xDD00 ->
+                     Mem.write mem cpu'.address cia2.data;
+                     cia2.data
+                   | 0xD012 -> 0
+                   | _ -> Mem.read mem cpu'.address
+                 in
+                 let irq = (not cia1.irqb) || not cia2.irqb in
+                 Some
+                   { cpu = { cpu' with phy2 = false; address = cpu'.address; data; irq }
+                   ; bus = { address = cpu'.address; data }
+                   ; mem
+                   ; operand
+                   ; cia1
+                   ; cia2
+                   }
+               | false ->
+                 let cia1 =
+                   (* printf *)
+                   (* "Before calling write phy2: %b %04X %02X %02X rw: %b csb: %b\n" *)
+                   (* phy2 *)
+                   (* cpu'.address *)
+                   (* rs *)
+                   (* cpu'.data *)
+                   (* cpu'.rw *)
+                   (* (not (cpu'.address land 0xFF00 = 0xDC00)); *)
+                   Cia.tick
+                     { cia1 with
+                       phy2
+                     ; csb = not (cpu'.address land 0xFF00 = 0xDC00)
+                     ; rw = cpu'.rw
+                     ; rs
+                     ; data = cpu'.data
+                     }
+                 in
+                 let cia2 =
+                   Cia.tick
+                     { cia2 with
+                       phy2
+                     ; csb = not (cpu'.address land 0xFF00 = 0xDD00)
+                     ; rw = cpu'.rw
+                     ; rs
+                     ; data = cpu'.data
+                     }
+                 in
+                 let irq = (not cia1.irqb) || not cia2.irqb in
+                 (match cpu'.address with
+                  | 0xDC00 | 0xDD00 ->
+                    Mem.write mem cpu'.address cpu'.data;
+                    Some
+                      { cpu =
+                          { cpu' with
+                            phy2 = false
+                          ; address = cpu'.address
+                          ; data = cpu'.data
+                          ; irq
+                          }
+                      ; bus = { address = cpu'.address; data = cpu'.data }
+                      ; mem
+                      ; operand
+                      ; cia1
+                      ; cia2
+                      }
+                  | _ ->
+                    Mem.write mem cpu'.address cpu'.data;
+                    Some
+                      { cpu =
+                          { cpu' with
+                            phy2 = false
+                          ; address = cpu'.address
+                          ; data = cpu'.data
+                          ; irq
+                          }
+                      ; bus = { address = cpu'.address; data = cpu'.data }
+                      ; mem
+                      ; operand
+                      ; cia1
+                      ; cia2
+                      })))
+         (* Not rdy. What do we do with cias*)
+         | false -> Some { operand; cpu; bus; mem; cia1; cia2 })
     in
     computer
   ;;
 end
 
-let load_pgm mem offset pgm = List.iteri pgm ~f:(fun i data -> mem.(offset + i) <- data)
+let load_pgm banks offset pgm =
+  List.iteri pgm ~f:(fun i data -> Computer.Mem.write banks (offset + i) data)
+;;
 
 let execute_cycles cycles computer =
   let half_cycles = 2 * cycles in
@@ -175,7 +352,7 @@ let execute_cycles cycles computer =
     if n = 0
     then Some computer :: acc
     else (
-      match M.fetch_decode_execute computer with
+      match Computer.fetch_decode_execute computer with
       | None -> acc
       | Some computer' -> aux (n - 1) (Some computer :: acc) computer')
   in
@@ -183,12 +360,13 @@ let execute_cycles cycles computer =
 ;;
 
 let init_test_computer program_start pgm =
-  let mem = Array.create ~len:65536 0xFF in
+  let mem = Computer.Mem.create None None None None in
+  Computer.Mem.write mem 1 0;
   let address = program_start in
   let data = List.hd_exn pgm in
-  let bus = M.{ data; address } in
+  let bus = Computer.{ data; address } in
   load_pgm mem program_start pgm;
-  let computer = M.create mem in
+  let computer = Computer.create mem in
   { computer with
     cpu =
       { computer.cpu with
@@ -203,7 +381,7 @@ let init_test_computer program_start pgm =
   }
 ;;
 
-let dump_execution (computer : M.t option) =
+let dump_execution (computer : Computer.t option) =
   match computer with
   | None -> printf "jjjjjj"
   | Some computer ->
@@ -211,21 +389,21 @@ let dump_execution (computer : M.t option) =
       "ab: 0x%04X db: 0x%02X %s\n"
       computer.bus.address
       computer.bus.data
-      (C6510.M.cpu_to_string computer.cpu computer.operand)
+      (C6510.Cpu.cpu_to_string computer.cpu computer.operand)
 ;;
 
 let dump_executions = List.iter ~f:dump_execution
 let dump_last_execution executions = List.hd_exn executions |> dump_execution
 
-let dump_last_execution_mem (executions : M.t option list) mem =
+let dump_last_execution_mem (executions : Computer.t option list) mem =
   let last_computer = List.hd_exn executions in
   List.iter mem ~f:(fun m ->
     match last_computer with
     | None -> printf "Mem: 0x%04X : 0x%02X\n" m 0xDEAD
-    | Some c -> printf "Mem: 0x%04X : 0x%02X\n" m c.banks.(m))
+    | Some c -> printf "Mem: 0x%04X : 0x%02X\n" m (Computer.Mem.read c.mem m))
 ;;
 
-module Cpu = C6510.M
+module Cpu = C6510.Cpu
 
 let%expect_test "testing NOP IMPLIED (0xEA)" =
   (* 2 cycles , 1 byte *)
@@ -349,7 +527,7 @@ let%expect_test "testing LDA ZEROPAGE (0xA5) non-zero positive" =
   (* LDA $44 *)
   let pgm = [ 0xA5; 0x44 ] in
   let computer = init_test_computer 0x1000 pgm in
-  computer.banks.(0x044) <- 0x01;
+  Computer.Mem.write computer.mem 0x044 0x01;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -362,7 +540,7 @@ let%expect_test "testing LDA ZEROPAGE (0xA5) non-zero negative" =
   (* LDA $44 *)
   let pgm = [ 0xA5; 0x44 ] in
   let computer = init_test_computer 0x1000 pgm in
-  computer.banks.(0x044) <- 0x80;
+  Computer.Mem.write computer.mem 0x044 0x80;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -375,7 +553,7 @@ let%expect_test "testing LDA ZEROPAGE (0xA5) zero" =
   (* LDA $44 *)
   let pgm = [ 0xA5; 0x44 ] in
   let computer = init_test_computer 0x1000 pgm in
-  computer.banks.(0x044) <- 0x00;
+  Computer.Mem.write computer.mem 0x044 0x00;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -388,7 +566,7 @@ let%expect_test "testing LDX ZEROPAGE (0xA6) non-zero positive" =
   (* LDA $44 *)
   let pgm = [ 0xA6; 0x44 ] in
   let computer = init_test_computer 0x1000 pgm in
-  computer.banks.(0x044) <- 0x01;
+  Computer.Mem.write computer.mem 0x044 0x01;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -401,7 +579,7 @@ let%expect_test "testing LDX ZEROPAGE (0xA6) non-zero negative" =
   (* LDA $44 *)
   let pgm = [ 0xA6; 0x44 ] in
   let computer = init_test_computer 0x1000 pgm in
-  computer.banks.(0x044) <- 0x80;
+  Computer.Mem.write computer.mem 0x044 0x80;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -414,7 +592,7 @@ let%expect_test "testing LDX ZEROPAGE (0xA6) zero" =
   (* LDA $44 *)
   let pgm = [ 0xA6; 0x44 ] in
   let computer = init_test_computer 0x1000 pgm in
-  computer.banks.(0x044) <- 0x00;
+  Computer.Mem.write computer.mem 0x044 0x00;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -427,7 +605,7 @@ let%expect_test "testing LDY ZEROPAGE (0xA4) non-zero positive" =
   (* LDA $44 *)
   let pgm = [ 0xA4; 0x44 ] in
   let computer = init_test_computer 0x1000 pgm in
-  computer.banks.(0x044) <- 0x01;
+  Computer.Mem.write computer.mem 0x044 0x01;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -440,7 +618,7 @@ let%expect_test "testing LDY ZEROPAGE (0xA4) non-zero negative" =
   (* LDA $44 *)
   let pgm = [ 0xA4; 0x44 ] in
   let computer = init_test_computer 0x1000 pgm in
-  computer.banks.(0x044) <- 0x80;
+  Computer.Mem.write computer.mem 0x044 0x80;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -453,7 +631,7 @@ let%expect_test "testing LDY ZEROPAGE (0xA4) zero" =
   (* LDA $44 *)
   let pgm = [ 0xA4; 0x44 ] in
   let computer = init_test_computer 0x1000 pgm in
-  computer.banks.(0x044) <- 0x00;
+  Computer.Mem.write computer.mem 0x044 0x00;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -469,7 +647,7 @@ let%expect_test "testing EOR ZEROPAGE (0x45) non-zero positive" =
   let computer =
     { computer with cpu = { computer.cpu with a = 0b0000_0010; sr = 0x00 } }
   in
-  computer.banks.(0x44) <- 0b0000_0001;
+  Computer.Mem.write computer.mem 0x044 0b0000_0001;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -485,7 +663,7 @@ let%expect_test "testing EOR ZEROPAGE (0x45) non-zero negative" =
   let computer =
     { computer with cpu = { computer.cpu with a = 0b0000_0010; sr = 0x00 } }
   in
-  computer.banks.(0x044) <- 0b1000_0001 (* 0x81 *);
+  Computer.Mem.write computer.mem 0x044 0b1000_0001;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -501,7 +679,7 @@ let%expect_test "testing EOR ZEROPAGE (0x45) zero" =
   let computer =
     { computer with cpu = { computer.cpu with a = 0b0000_0010; sr = 0x00 } }
   in
-  computer.banks.(0x044) <- 0b0000_0010 (* 0x02 *);
+  Computer.Mem.write computer.mem 0x044 0b0000_0010;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -517,7 +695,7 @@ let%expect_test "testing AND ZEROPAGE (0x25) non-zero positive" =
   let computer =
     { computer with cpu = { computer.cpu with a = 0b0000_0010; sr = 0x00 } }
   in
-  computer.banks.(0x44) <- 0b0000_0011;
+  Computer.Mem.write computer.mem 0x044 0b0000_0011;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -533,7 +711,7 @@ let%expect_test "testing AND ZEROPAGE (0x25) non-zero negative" =
   let computer =
     { computer with cpu = { computer.cpu with a = 0b1000_0010; sr = 0x00 } }
   in
-  computer.banks.(0x044) <- 0b1000_0001 (* 0x81 *);
+  Computer.Mem.write computer.mem 0x044 0b1000_0001;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -549,7 +727,7 @@ let%expect_test "testing AND ZEROPAGE (0x25) zero" =
   let computer =
     { computer with cpu = { computer.cpu with a = 0b0000_0001; sr = 0x00 } }
   in
-  computer.banks.(0x044) <- 0b0000_0010 (* 0x02 *);
+  Computer.Mem.write computer.mem 0x044 0b0000_0010;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -565,7 +743,7 @@ let%expect_test "testing ORA ZEROPAGE (0x05) non-zero positive" =
   let computer =
     { computer with cpu = { computer.cpu with a = 0b0000_0010; sr = 0x00 } }
   in
-  computer.banks.(0x44) <- 0b0000_0011;
+  Computer.Mem.write computer.mem 0x044 0b0000_0011;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -581,7 +759,7 @@ let%expect_test "testing ORA ZEROPAGE (0x05) non-zero negative" =
   let computer =
     { computer with cpu = { computer.cpu with a = 0b1000_0010; sr = 0x00 } }
   in
-  computer.banks.(0x044) <- 0b1000_0001 (* 0x81 *);
+  Computer.Mem.write computer.mem 0x044 0b1000_0001;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -597,7 +775,7 @@ let%expect_test "testing ORA ZEROPAGE (0x05) zero" =
   let computer =
     { computer with cpu = { computer.cpu with a = 0b0000_0000; sr = 0x02 } }
   in
-  computer.banks.(0x044) <- 0b0000_0000;
+  Computer.Mem.write computer.mem 0x044 0b0000_0000;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -611,7 +789,7 @@ let%expect_test "testing ADC Binary ZEROPAGE (0x65) No flags" =
   let pgm = [ 0x65; 0x44 ] in
   let computer = init_test_computer 0x1000 pgm in
   let computer = { computer with cpu = { computer.cpu with a = 0x02; sr = 0x00 } } in
-  computer.banks.(0x44) <- 0x03;
+  Computer.Mem.write computer.mem 0x44 0x03;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -625,7 +803,7 @@ let%expect_test "testing ADC Binary ZEROPAGE (0x65) with incomming Carry " =
   let pgm = [ 0x65; 0x44 ] in
   let computer = init_test_computer 0x1000 pgm in
   let computer = { computer with cpu = { computer.cpu with a = 0x02; sr = 0x01 } } in
-  computer.banks.(0x44) <- 0x03;
+  Computer.Mem.write computer.mem 0x44 0x03;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -639,7 +817,7 @@ let%expect_test "testing ADC Binary ZEROPAGE (0x65) Generating Carry " =
   let pgm = [ 0x65; 0x44 ] in
   let computer = init_test_computer 0x1000 pgm in
   let computer = { computer with cpu = { computer.cpu with a = 0x01; sr = 0x00 } } in
-  computer.banks.(0x44) <- 0xFF;
+  Computer.Mem.write computer.mem 0x44 0xFF;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -653,7 +831,7 @@ let%expect_test "testing ADC Binary ZEROPAGE (0x65) Pos+Pos=Neg " =
   let pgm = [ 0x65; 0x44 ] in
   let computer = init_test_computer 0x1000 pgm in
   let computer = { computer with cpu = { computer.cpu with a = 0x7F; sr = 0x00 } } in
-  computer.banks.(0x44) <- 0x01;
+  Computer.Mem.write computer.mem 0x44 0x01;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -667,7 +845,7 @@ let%expect_test "testing ADC Binary ZEROPAGE (0x65) Neg+Neg=Pos " =
   let pgm = [ 0x65; 0x44 ] in
   let computer = init_test_computer 0x1000 pgm in
   let computer = { computer with cpu = { computer.cpu with a = 0x80; sr = 0x80 } } in
-  computer.banks.(0x44) <- 0xFF;
+  Computer.Mem.write computer.mem 0x44 0xFF;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -681,7 +859,7 @@ let%expect_test "testing ADC Binary ZEROPAGE (0x65) Pos+Neg " =
   let pgm = [ 0x65; 0x44 ] in
   let computer = init_test_computer 0x1000 pgm in
   let computer = { computer with cpu = { computer.cpu with a = 0x7F; sr = 0x00 } } in
-  computer.banks.(0x44) <- 0x80;
+  Computer.Mem.write computer.mem 0x44 0x80;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -699,7 +877,7 @@ let%expect_test "testing STA ZEROPAGE (0x85)" =
   dump_last_execution executions;
   (match List.last_exn executions with
    | None -> printf "Invalid"
-   | Some c -> printf "Mem: 0x%04X : 0x%02X" 0x44 c.banks.(0x44));
+   | Some c -> printf "Mem: 0x%04X : 0x%02X" 0x44 (Computer.Mem.read c.mem 0x44));
   [%expect
     {|
     ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0x00 y: 0x00 sp: 0xFF sr: nv-bdizc pc: 0x1002 inst: STA $44
@@ -752,7 +930,7 @@ let%expect_test "testing ASL ZEROPAGE Basic (0x06)" =
   (* LDA $44 *)
   let pgm = [ 0x06; 0x44 ] in
   let computer = init_test_computer 0x1000 pgm in
-  computer.banks.(0x44) <- 0x01;
+  Computer.Mem.write computer.mem 0x44 0x01;
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x00 } }
   in
@@ -773,7 +951,7 @@ let%expect_test "testing ASL ZEROPAGE Shift Out (0x06)" =
   (* LDA $44 *)
   let pgm = [ 0x06; 0x44 ] in
   let computer = init_test_computer 0x1000 pgm in
-  computer.banks.(0x44) <- 0x80;
+  Computer.Mem.write computer.mem 0x44 0x80;
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x00 } }
   in
@@ -794,7 +972,7 @@ let%expect_test "testing ASL ZEROPAGE Negative FLag  (0x06)" =
   (* LDA $44 *)
   let pgm = [ 0x06; 0x44 ] in
   let computer = init_test_computer 0x1000 pgm in
-  computer.banks.(0x44) <- 0x40;
+  Computer.Mem.write computer.mem 0x44 0x40;
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x00 } }
   in
@@ -815,7 +993,7 @@ let%expect_test "testing LSR ZEROPAGE Basic (0x46)" =
   (* LDA $44 *)
   let pgm = [ 0x46; 0x44 ] in
   let computer = init_test_computer 0x1000 pgm in
-  computer.banks.(0x44) <- 0x02;
+  Computer.Mem.write computer.mem 0x44 0x02;
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x01 } }
   in
@@ -836,7 +1014,7 @@ let%expect_test "testing LSR ZEROPAGE Shift Into (0x46)" =
   (* LDA $44 *)
   let pgm = [ 0x46; 0x44 ] in
   let computer = init_test_computer 0x1000 pgm in
-  computer.banks.(0x44) <- 0x01;
+  Computer.Mem.write computer.mem 0x44 0x01;
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x00 } }
   in
@@ -857,7 +1035,7 @@ let%expect_test "testing LSR ZEROPAGE Hign Bit clear  (0x46)" =
   (* LDA $44 *)
   let pgm = [ 0x46; 0x44 ] in
   let computer = init_test_computer 0x1000 pgm in
-  computer.banks.(0x44) <- 0x80;
+  Computer.Mem.write computer.mem 0x44 0x80;
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x01 } }
   in
@@ -878,7 +1056,7 @@ let%expect_test "testing ROR ZEROPAGE Carry to Bit 7 (0x66)" =
   (* LDA $44 *)
   let pgm = [ 0x66; 0x44 ] in
   let computer = init_test_computer 0x1000 pgm in
-  computer.banks.(0x44) <- 0x00;
+  Computer.Mem.write computer.mem 0x44 0x00;
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x03 } }
   in
@@ -899,7 +1077,7 @@ let%expect_test "testing ROR ZEROPAGE Bit 0 to Carry (0x66)" =
   (* LDA $44 *)
   let pgm = [ 0x66; 0x44 ] in
   let computer = init_test_computer 0x1000 pgm in
-  computer.banks.(0x44) <- 0x01;
+  Computer.Mem.write computer.mem 0x44 0x01;
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x00 } }
   in
@@ -920,7 +1098,7 @@ let%expect_test "testing ROR ZEROPAGE Negative Flag (0x66)" =
   (* LDA $44 *)
   let pgm = [ 0x66; 0x44 ] in
   let computer = init_test_computer 0x1000 pgm in
-  computer.banks.(0x44) <- 0x7F;
+  Computer.Mem.write computer.mem 0x44 0x7F;
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x01 } }
   in
@@ -941,7 +1119,7 @@ let%expect_test "testing ROL ZEROPAGE Carry to bit 0 (0x26)" =
   (* LDA $44 *)
   let pgm = [ 0x26; 0x44 ] in
   let computer = init_test_computer 0x1000 pgm in
-  computer.banks.(0x44) <- 0x00;
+  Computer.Mem.write computer.mem 0x44 0x00;
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x03 } }
   in
@@ -962,7 +1140,7 @@ let%expect_test "testing ROL ZEROPAGE Bit 7 to Carry (0x26)" =
   (* LDA $44 *)
   let pgm = [ 0x26; 0x44 ] in
   let computer = init_test_computer 0x1000 pgm in
-  computer.banks.(0x44) <- 0x80;
+  Computer.Mem.write computer.mem 0x44 0x80;
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x80 } }
   in
@@ -983,7 +1161,7 @@ let%expect_test "testing ROL ZEROPAGE Negative Flag (0x26)" =
   (* LDA $44 *)
   let pgm = [ 0x26; 0x44 ] in
   let computer = init_test_computer 0x1000 pgm in
-  computer.banks.(0x44) <- 0x40;
+  Computer.Mem.write computer.mem 0x44 0x40;
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x00 } }
   in
@@ -1004,7 +1182,7 @@ let%expect_test "testing INC ZEROPAGE Add 1 (0xE6)" =
   (* LDA $44 *)
   let pgm = [ 0xE6; 0x44 ] in
   let computer = init_test_computer 0x1000 pgm in
-  computer.banks.(0x44) <- 0x01;
+  Computer.Mem.write computer.mem 0x44 0x01;
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x00 } }
   in
@@ -1025,7 +1203,7 @@ let%expect_test "testing INC ZEROPAGE Negative Flag (0xE6)" =
   (* LDA $44 *)
   let pgm = [ 0xE6; 0x44 ] in
   let computer = init_test_computer 0x1000 pgm in
-  computer.banks.(0x44) <- 0x7F;
+  Computer.Mem.write computer.mem 0x44 0x7F;
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x00 } }
   in
@@ -1046,7 +1224,7 @@ let%expect_test "testing INC ZEROPAGE OverFlow (0xE6)" =
   (* LDA $44 *)
   let pgm = [ 0xE6; 0x44 ] in
   let computer = init_test_computer 0x1000 pgm in
-  computer.banks.(0x44) <- 0xFF;
+  Computer.Mem.write computer.mem 0x44 0xFF;
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x80 } }
   in
@@ -1067,7 +1245,7 @@ let%expect_test "testing DEC ZEROPAGE dec 1 (0xC6)" =
   (* LDA $44 *)
   let pgm = [ 0xC6; 0x44 ] in
   let computer = init_test_computer 0x1000 pgm in
-  computer.banks.(0x44) <- 0x02;
+  Computer.Mem.write computer.mem 0x44 0x02;
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x00 } }
   in
@@ -1088,7 +1266,7 @@ let%expect_test "testing DEC ZEROPAGE set Negative Flag (0xC6)" =
   (* LDA $44 *)
   let pgm = [ 0xC6; 0x44 ] in
   let computer = init_test_computer 0x1000 pgm in
-  computer.banks.(0x44) <- 0x00;
+  Computer.Mem.write computer.mem 0x44 0x00;
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x02 } }
   in
@@ -1109,7 +1287,7 @@ let%expect_test "testing DEC ZEROPAGE Unset negative (0xC6)" =
   (* LDA $44 *)
   let pgm = [ 0xC6; 0x44 ] in
   let computer = init_test_computer 0x1000 pgm in
-  computer.banks.(0x44) <- 0x80;
+  Computer.Mem.write computer.mem 0x44 0x80;
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x80 } }
   in
@@ -1130,7 +1308,7 @@ let%expect_test "testing DEC ZEROPAGE dec to zero (0xC6)" =
   (* LDA $44 *)
   let pgm = [ 0xC6; 0x44 ] in
   let computer = init_test_computer 0x1000 pgm in
-  computer.banks.(0x44) <- 0x01;
+  Computer.Mem.write computer.mem 0x44 0x01;
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x00 } }
   in
@@ -1151,7 +1329,7 @@ let%expect_test "testing SBC Binary ZEROPAGE (0xE5) No borrow" =
   let pgm = [ 0xE5; 0x44 ] in
   let computer = init_test_computer 0x1000 pgm in
   let computer = { computer with cpu = { computer.cpu with a = 0x05; sr = 0x01 } } in
-  computer.banks.(0x44) <- 0x02;
+  Computer.Mem.write computer.mem 0x44 0x02;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -1163,7 +1341,7 @@ let%expect_test "testing SBC Binary ZEROPAGE (0xE5) Substraction with Borrow " =
   let pgm = [ 0xE5; 0x44 ] in
   let computer = init_test_computer 0x1000 pgm in
   let computer = { computer with cpu = { computer.cpu with a = 0x05; sr = 0x00 } } in
-  computer.banks.(0x44) <- 0x02;
+  Computer.Mem.write computer.mem 0x44 0x02;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -1175,7 +1353,7 @@ let%expect_test "testing SBC Binary ZEROPAGE (0xE5) Underflow " =
   let pgm = [ 0xE5; 0x44 ] in
   let computer = init_test_computer 0x1000 pgm in
   let computer = { computer with cpu = { computer.cpu with a = 0x01; sr = 0x01 } } in
-  computer.banks.(0x44) <- 0x02;
+  Computer.Mem.write computer.mem 0x44 0x02;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -1187,7 +1365,7 @@ let%expect_test "testing SBC Binary ZEROPAGE (0xE5) Overflow " =
   let pgm = [ 0xE5; 0x44 ] in
   let computer = init_test_computer 0x1000 pgm in
   let computer = { computer with cpu = { computer.cpu with a = 0x80; sr = 0x01 } } in
-  computer.banks.(0x44) <- 0x01;
+  Computer.Mem.write computer.mem 0x44 0x01;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -1199,7 +1377,7 @@ let%expect_test "testing CMP ZEROPAGE (0xC5) Equality " =
   let pgm = [ 0xC5; 0x44 ] in
   let computer = init_test_computer 0x1000 pgm in
   let computer = { computer with cpu = { computer.cpu with a = 0x42; sr = 0x00 } } in
-  computer.banks.(0x44) <- 0x42;
+  Computer.Mem.write computer.mem 0x44 0x42;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -1211,7 +1389,7 @@ let%expect_test "testing CMP ZEROPAGE (0xC5) Greater than" =
   let pgm = [ 0xC5; 0x44 ] in
   let computer = init_test_computer 0x1000 pgm in
   let computer = { computer with cpu = { computer.cpu with a = 0xFF; sr = 0x00 } } in
-  computer.banks.(0x44) <- 0x01;
+  Computer.Mem.write computer.mem 0x44 0x01;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -1223,7 +1401,7 @@ let%expect_test "testing CMP ZEROPAGE (0xC5) less than" =
   let pgm = [ 0xC5; 0x44 ] in
   let computer = init_test_computer 0x1000 pgm in
   let computer = { computer with cpu = { computer.cpu with a = 0x02; sr = 0x00 } } in
-  computer.banks.(0x44) <- 0x03;
+  Computer.Mem.write computer.mem 0x44 0x03;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -1235,7 +1413,7 @@ let%expect_test "testing BIT ZEROPAGE (0x24) specific bit" =
   let pgm = [ 0x24; 0x44 ] in
   let computer = init_test_computer 0x1000 pgm in
   let computer = { computer with cpu = { computer.cpu with a = 0x08; sr = 0x00 } } in
-  computer.banks.(0x44) <- 0x0F;
+  Computer.Mem.write computer.mem 0x44 0x0F;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -1247,7 +1425,7 @@ let%expect_test "testing BIT ZEROPAGE (0x24) Negative/Overflow" =
   let pgm = [ 0x24; 0x44 ] in
   let computer = init_test_computer 0x1000 pgm in
   let computer = { computer with cpu = { computer.cpu with a = 0x00; sr = 0x02 } } in
-  computer.banks.(0x44) <- 0xC0;
+  Computer.Mem.write computer.mem 0x44 0xC0;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -1259,7 +1437,7 @@ let%expect_test "testing BIT ZEROPAGE (0x24) Masking" =
   let pgm = [ 0x24; 0x44 ] in
   let computer = init_test_computer 0x1000 pgm in
   let computer = { computer with cpu = { computer.cpu with a = 0x01; sr = 0x00 } } in
-  computer.banks.(0x44) <- 0xFE;
+  Computer.Mem.write computer.mem 0x44 0xFE;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -1273,7 +1451,7 @@ let%expect_test "testing CPX ZEROPAGE (0xE4) Equality " =
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x42; y = 0x03; sr = 0x00 } }
   in
-  computer.banks.(0x44) <- 0x42;
+  Computer.Mem.write computer.mem 0x44 0x42;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -1287,7 +1465,7 @@ let%expect_test "testing CPX ZEROPAGE (0xE4) Overflow " =
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x80; y = 0x03; sr = 0x30 } }
   in
-  computer.banks.(0x44) <- 0x7F;
+  Computer.Mem.write computer.mem 0x44 0x7F;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -1301,7 +1479,7 @@ let%expect_test "testing CPX ZEROPAGE (0xE4) Greater than" =
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0xFF; y = 0x03; sr = 0x00 } }
   in
-  computer.banks.(0x44) <- 0x01;
+  Computer.Mem.write computer.mem 0x44 0x01;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -1315,7 +1493,7 @@ let%expect_test "testing CPX ZEROPAGE (0xE4) less than" =
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x00 } }
   in
-  computer.banks.(0x44) <- 0x03;
+  Computer.Mem.write computer.mem 0x44 0x03;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -1329,7 +1507,7 @@ let%expect_test "testing CPY ZEROPAGE (0xC4) Equality " =
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x42; sr = 0x00 } }
   in
-  computer.banks.(0x44) <- 0x42;
+  Computer.Mem.write computer.mem 0x44 0x42;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -1343,7 +1521,7 @@ let%expect_test "testing CPY ZEROPAGE (0xC4) Greater than" =
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0xFF; sr = 0x00 } }
   in
-  computer.banks.(0x44) <- 0x01;
+  Computer.Mem.write computer.mem 0x44 0x01;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -1357,7 +1535,7 @@ let%expect_test "testing CPY ZEROPAGE (0xC4) less than" =
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x02; sr = 0x00 } }
   in
-  computer.banks.(0x44) <- 0x03;
+  Computer.Mem.write computer.mem 0x44 0x03;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -1481,7 +1659,7 @@ let%expect_test "testing AND IMMEDIATE (0x29) zero" =
   let computer =
     { computer with cpu = { computer.cpu with a = 0b0000_0001; sr = 0x00 } }
   in
-  computer.banks.(0x044) <- 0b0000_0010 (* 0x02 *);
+  Computer.Mem.write computer.mem 0x44 0x02;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -1706,7 +1884,7 @@ let%expect_test "testing LDA ABSOLUTE (0xAD) non-zero positive" =
   let cycles = 4 in
   let pgm = [ 0xAD; 0x69; 0x42 ] in
   let computer = init_test_computer 0x1000 pgm in
-  computer.banks.(0x4269) <- 0x01;
+  Computer.Mem.write computer.mem 0x4269 0x01;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -1717,7 +1895,7 @@ let%expect_test "testing LDA ABSOLUTE (0xAD) non-zero negative" =
   let cycles = 4 in
   let pgm = [ 0xAD; 0x69; 0x42 ] in
   let computer = init_test_computer 0x1000 pgm in
-  computer.banks.(0x4269) <- 0x80;
+  Computer.Mem.write computer.mem 0x4269 0x80;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -1728,7 +1906,7 @@ let%expect_test "testing LDA ABSOLUTE (0xAD) zero" =
   let cycles = 4 in
   let pgm = [ 0xAD; 0x69; 0x42 ] in
   let computer = init_test_computer 0x1000 pgm in
-  computer.banks.(0x4269) <- 0x00;
+  Computer.Mem.write computer.mem 0x4269 0x00;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -1740,7 +1918,7 @@ let%expect_test "testing LDX ABSOLUTE (0xAE) non-zero positive" =
   (*69 LDA $44 *)
   let pgm = [ 0xAE; 0x69; 0x44 ] in
   let computer = init_test_computer 0x1000 pgm in
-  computer.banks.(0x4469) <- 0x01;
+  Computer.Mem.write computer.mem 0x4469 0x01;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -1751,7 +1929,7 @@ let%expect_test "testing LDX ABSOLUTE (0xAE) non-zero negative" =
   let cycles = 4 in
   let pgm = [ 0xAE; 0x69; 0x44 ] in
   let computer = init_test_computer 0x1000 pgm in
-  computer.banks.(0x4469) <- 0x80;
+  Computer.Mem.write computer.mem 0x4469 0x80;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -1762,7 +1940,7 @@ let%expect_test "testing LDX ABSOLUTE (0xAE) zero" =
   let cycles = 4 in
   let pgm = [ 0xAE; 0x69; 0x44 ] in
   let computer = init_test_computer 0x1000 pgm in
-  computer.banks.(0x4469) <- 0x00;
+  Computer.Mem.write computer.mem 0x4469 0x00;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -1773,7 +1951,7 @@ let%expect_test "testing LDY IMMEDIATE (0xAC) non-zero positive" =
   let cycles = 4 in
   let pgm = [ 0xAC; 0x69; 0x44 ] in
   let computer = init_test_computer 0x1000 pgm in
-  computer.banks.(0x04469) <- 0x01;
+  Computer.Mem.write computer.mem 0x4469 0x01;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -1784,7 +1962,7 @@ let%expect_test "testing LDY IMMEDIATE (0xAC) non-zero negative" =
   let cycles = 4 in
   let pgm = [ 0xAC; 0x69; 0x44 ] in
   let computer = init_test_computer 0x1000 pgm in
-  computer.banks.(0x04469) <- 0x80;
+  Computer.Mem.write computer.mem 0x4469 0x80;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -1795,7 +1973,7 @@ let%expect_test "testing LDY IMMEDIATE (0xAC) zero" =
   let cycles = 4 in
   let pgm = [ 0xAC; 0x69; 0x44 ] in
   let computer = init_test_computer 0x1000 pgm in
-  computer.banks.(0x04469) <- 0x00;
+  Computer.Mem.write computer.mem 0x4469 0x00;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -1811,7 +1989,7 @@ let%expect_test "testing ORA ABSOLUTE (0x0D) non-zero positive" =
   let computer =
     { computer with cpu = { computer.cpu with a = 0b0000_0010; sr = 0x00 } }
   in
-  computer.banks.(0x4469) <- 0b0000_0011;
+  Computer.Mem.write computer.mem 0x4469 0x03;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -1827,7 +2005,7 @@ let%expect_test "testing ORA ABSOLUTE (0x0D) non-zero negative" =
   let computer =
     { computer with cpu = { computer.cpu with a = 0b1000_0010; sr = 0x00 } }
   in
-  computer.banks.(0x04469) <- 0b1000_0001 (* 0x81 *);
+  Computer.Mem.write computer.mem 0x4469 0x81;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -1843,7 +2021,7 @@ let%expect_test "testing ORA ABSOLUTE (0x0D) zero" =
   let computer =
     { computer with cpu = { computer.cpu with a = 0b0000_0000; sr = 0x02 } }
   in
-  computer.banks.(0x04469) <- 0b0000_0000;
+  Computer.Mem.write computer.mem 0x4469 0x00;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -1857,7 +2035,7 @@ let%expect_test "testing ADC Binary ABSOLUTE (0x6D) No flags" =
   let pgm = [ 0x6D; 0x69; 0x44 ] in
   let computer = init_test_computer 0x1000 pgm in
   let computer = { computer with cpu = { computer.cpu with a = 0x02; sr = 0x00 } } in
-  computer.banks.(0x4469) <- 0x03;
+  Computer.Mem.write computer.mem 0x4469 0x03;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -1871,7 +2049,7 @@ let%expect_test "testing ADC Binary ABSOLUTE (0x6D) with incomming Carry " =
   let pgm = [ 0x6D; 0x69; 0x44 ] in
   let computer = init_test_computer 0x1000 pgm in
   let computer = { computer with cpu = { computer.cpu with a = 0x02; sr = 0x01 } } in
-  computer.banks.(0x4469) <- 0x03;
+  Computer.Mem.write computer.mem 0x4469 0x03;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -1885,7 +2063,7 @@ let%expect_test "testing ADC Binary ABSOLUTE (0x6D) Generating Carry " =
   let pgm = [ 0x6D; 0x69; 0x44 ] in
   let computer = init_test_computer 0x1000 pgm in
   let computer = { computer with cpu = { computer.cpu with a = 0x01; sr = 0x00 } } in
-  computer.banks.(0x4469) <- 0xFF;
+  Computer.Mem.write computer.mem 0x4469 0xFF;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -1899,7 +2077,7 @@ let%expect_test "testing ADC Binary ABSOLUTE (0x6D) Pos+Pos=Neg " =
   let pgm = [ 0x6D; 0x69; 0x44 ] in
   let computer = init_test_computer 0x1000 pgm in
   let computer = { computer with cpu = { computer.cpu with a = 0x7F; sr = 0x00 } } in
-  computer.banks.(0x4469) <- 0x01;
+  Computer.Mem.write computer.mem 0x4469 0x01;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -1913,7 +2091,7 @@ let%expect_test "testing ADC Binary ABSOLUTE (0x6D) Neg+Neg=Pos " =
   let pgm = [ 0x6D; 0x69; 0x44 ] in
   let computer = init_test_computer 0x1000 pgm in
   let computer = { computer with cpu = { computer.cpu with a = 0x80; sr = 0x80 } } in
-  computer.banks.(0x4469) <- 0xFF;
+  Computer.Mem.write computer.mem 0x4469 0xFF;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -1927,7 +2105,7 @@ let%expect_test "testing ADC Binary ABSOLUTE (0x6D) Pos+Neg " =
   let pgm = [ 0x6D; 0x69; 0x44 ] in
   let computer = init_test_computer 0x1000 pgm in
   let computer = { computer with cpu = { computer.cpu with a = 0x7F; sr = 0x00 } } in
-  computer.banks.(0x4469) <- 0x80;
+  Computer.Mem.write computer.mem 0x4469 0x80;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -1943,7 +2121,7 @@ let%expect_test "testing AND ABSOLUTE (0x2D) non-zero positive" =
   let computer =
     { computer with cpu = { computer.cpu with a = 0b0000_0010; sr = 0x00 } }
   in
-  computer.banks.(0x4469) <- 0b0000_0011;
+  Computer.Mem.write computer.mem 0x4469 0x03;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -1959,7 +2137,7 @@ let%expect_test "testing AND ABSOLUTE (0x2D) non-zero negative" =
   let computer =
     { computer with cpu = { computer.cpu with a = 0b1000_0010; sr = 0x00 } }
   in
-  computer.banks.(0x04469) <- 0b1000_0001 (* 0x81 *);
+  Computer.Mem.write computer.mem 0x4469 0x81;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -1975,7 +2153,7 @@ let%expect_test "testing AND ABSOLUTE (0x2D) zero" =
   let computer =
     { computer with cpu = { computer.cpu with a = 0b0000_0001; sr = 0x00 } }
   in
-  computer.banks.(0x04469) <- 0b0000_0010 (* 0x02 *);
+  Computer.Mem.write computer.mem 0x4469 0x02;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -1987,7 +2165,7 @@ let%expect_test "testing BIT ABSOLUTE (0x2C) specific bit" =
   let pgm = [ 0x2C; 0x69; 0x44 ] in
   let computer = init_test_computer 0x1000 pgm in
   let computer = { computer with cpu = { computer.cpu with a = 0x08; sr = 0x00 } } in
-  computer.banks.(0x4469) <- 0x0F;
+  Computer.Mem.write computer.mem 0x4469 0x0F;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -1999,7 +2177,7 @@ let%expect_test "testing BIT ABSOLUTE (0x2C) Negative/Overflow" =
   let pgm = [ 0x2C; 0x69; 0x44 ] in
   let computer = init_test_computer 0x1000 pgm in
   let computer = { computer with cpu = { computer.cpu with a = 0x00; sr = 0x02 } } in
-  computer.banks.(0x4469) <- 0xC0;
+  Computer.Mem.write computer.mem 0x4469 0xC0;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -2011,7 +2189,7 @@ let%expect_test "testing BIT ABSOLUTE (0x2C) Masking" =
   let pgm = [ 0x2C; 0x69; 0x44 ] in
   let computer = init_test_computer 0x1000 pgm in
   let computer = { computer with cpu = { computer.cpu with a = 0x01; sr = 0x00 } } in
-  computer.banks.(0x4469) <- 0xFE;
+  Computer.Mem.write computer.mem 0x4469 0xFE;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -2023,7 +2201,7 @@ let%expect_test "testing CMP ABSOLUTE (0xCD) Equality " =
   let pgm = [ 0xCD; 0x69; 0x44 ] in
   let computer = init_test_computer 0x1000 pgm in
   let computer = { computer with cpu = { computer.cpu with a = 0x42; sr = 0x00 } } in
-  computer.banks.(0x4469) <- 0x42;
+  Computer.Mem.write computer.mem 0x4469 0x42;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -2035,7 +2213,7 @@ let%expect_test "testing CMP ABSOLUTE (0xCD) Greater than" =
   let pgm = [ 0xCD; 0x69; 0x44 ] in
   let computer = init_test_computer 0x1000 pgm in
   let computer = { computer with cpu = { computer.cpu with a = 0xFF; sr = 0x00 } } in
-  computer.banks.(0x4469) <- 0x01;
+  Computer.Mem.write computer.mem 0x4469 0x01;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -2047,7 +2225,7 @@ let%expect_test "testing CMP ABSOLUTE (0xCD) less than" =
   let pgm = [ 0xCD; 0x69; 0x44 ] in
   let computer = init_test_computer 0x1000 pgm in
   let computer = { computer with cpu = { computer.cpu with a = 0x02; sr = 0x00 } } in
-  computer.banks.(0x4469) <- 0x03;
+  Computer.Mem.write computer.mem 0x4469 0x03;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -2061,7 +2239,7 @@ let%expect_test "testing CPX ABSOLUTE (0xEC) Equality " =
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x42; y = 0x03; sr = 0x00 } }
   in
-  computer.banks.(0x4469) <- 0x42;
+  Computer.Mem.write computer.mem 0x4469 0x42;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -2075,7 +2253,7 @@ let%expect_test "testing CPX ABSOLUTE (0xEC) Greater than" =
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0xFF; y = 0x03; sr = 0x00 } }
   in
-  computer.banks.(0x4469) <- 0x01;
+  Computer.Mem.write computer.mem 0x4469 0x01;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -2089,7 +2267,7 @@ let%expect_test "testing CPX ZEROPAGE (0xEC) less than" =
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x00 } }
   in
-  computer.banks.(0x4469) <- 0x03;
+  Computer.Mem.write computer.mem 0x4469 0x03;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -2103,7 +2281,7 @@ let%expect_test "testing CPY ABSOLUTE (0xCC) Equality " =
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x42; sr = 0x00 } }
   in
-  computer.banks.(0x4469) <- 0x42;
+  Computer.Mem.write computer.mem 0x4469 0x42;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -2117,7 +2295,7 @@ let%expect_test "testing CPY ABSOLUTE (0xCC) Greater than" =
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0xFF; sr = 0x00 } }
   in
-  computer.banks.(0x4469) <- 0x01;
+  Computer.Mem.write computer.mem 0x4469 0x01;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -2131,7 +2309,7 @@ let%expect_test "testing CPY ABSOLUTE (0xCC) less than" =
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x02; sr = 0x00 } }
   in
-  computer.banks.(0x4469) <- 0x03;
+  Computer.Mem.write computer.mem 0x4469 0x03;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -2147,7 +2325,7 @@ let%expect_test "testing EOR ABSOLUTE (0x4D) non-zero positive" =
   let computer =
     { computer with cpu = { computer.cpu with a = 0b0000_0010; sr = 0x00 } }
   in
-  computer.banks.(0x4469) <- 0b0000_0001;
+  Computer.Mem.write computer.mem 0x4469 0x01;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -2163,7 +2341,7 @@ let%expect_test "testing EOR ABSOLUTE (0x4D) non-zero negative" =
   let computer =
     { computer with cpu = { computer.cpu with a = 0b0000_0010; sr = 0x00 } }
   in
-  computer.banks.(0x04469) <- 0b1000_0001 (* 0x81 *);
+  Computer.Mem.write computer.mem 0x4469 0x81;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -2179,7 +2357,7 @@ let%expect_test "testing EOR ABSOLUTE (0x4D) zero" =
   let computer =
     { computer with cpu = { computer.cpu with a = 0b0000_0010; sr = 0x00 } }
   in
-  computer.banks.(0x04469) <- 0b0000_0010 (* 0x02 *);
+  Computer.Mem.write computer.mem 0x4469 0x02;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -2242,7 +2420,7 @@ let%expect_test "testing DEC ABSOLUTE dec 1 (0xCE)" =
   (* LDA $44 *)
   let pgm = [ 0xCE; 0x69; 0x44 ] in
   let computer = init_test_computer 0x1000 pgm in
-  computer.banks.(0x4469) <- 0x02;
+  Computer.Mem.write computer.mem 0x4469 0x02;
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x00 } }
   in
@@ -2263,7 +2441,7 @@ let%expect_test "testing DEC ABSOLUTE set Negative Flag (0xCE)" =
   (* LDA $44 *)
   let pgm = [ 0xCE; 0x69; 0x44 ] in
   let computer = init_test_computer 0x1000 pgm in
-  computer.banks.(0x4469) <- 0x00;
+  Computer.Mem.write computer.mem 0x4469 0x00;
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x02 } }
   in
@@ -2281,7 +2459,7 @@ let%expect_test "testing DEC ABSOLUTE Unset negative (0xCE)" =
   let cycles = 6 in
   let pgm = [ 0xCE; 0x69; 0x44 ] in
   let computer = init_test_computer 0x1000 pgm in
-  computer.banks.(0x4469) <- 0x80;
+  Computer.Mem.write computer.mem 0x4469 0x80;
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x80 } }
   in
@@ -2302,7 +2480,7 @@ let%expect_test "testing DEC ABSOLUTE dec to zero (0xCE)" =
   (* LDA $44 *)
   let pgm = [ 0xCE; 0x69; 0x44 ] in
   let computer = init_test_computer 0x1000 pgm in
-  computer.banks.(0x4469) <- 0x01;
+  Computer.Mem.write computer.mem 0x4469 0x01;
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x00 } }
   in
@@ -2323,7 +2501,7 @@ let%expect_test "testing ASL IMMEDIATE Basic (0x0E)" =
   (* LDA $44 *)
   let pgm = [ 0x0E; 0x69; 0x44 ] in
   let computer = init_test_computer 0x1000 pgm in
-  computer.banks.(0x4469) <- 0x01;
+  Computer.Mem.write computer.mem 0x4469 0x01;
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x00 } }
   in
@@ -2344,7 +2522,7 @@ let%expect_test "testing ASL IMMEDIATE Shift Out (0x0E)" =
   (* LDA $44 *)
   let pgm = [ 0x0E; 0x69; 0x44 ] in
   let computer = init_test_computer 0x1000 pgm in
-  computer.banks.(0x4469) <- 0x80;
+  Computer.Mem.write computer.mem 0x4469 0x80;
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x00 } }
   in
@@ -2365,7 +2543,7 @@ let%expect_test "testing ASL IMMEDIATE Negative FLag  (0x0E)" =
   (* LDA $44 *)
   let pgm = [ 0x0E; 0x69; 0x44 ] in
   let computer = init_test_computer 0x1000 pgm in
-  computer.banks.(0x4469) <- 0x40;
+  Computer.Mem.write computer.mem 0x4469 0x40;
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x00 } }
   in
@@ -2386,7 +2564,7 @@ let%expect_test "testing INC ABSOLUTE Add 1 (0xEE)" =
   (* LDA $44 *)
   let pgm = [ 0xEE; 0x69; 0x44 ] in
   let computer = init_test_computer 0x1000 pgm in
-  computer.banks.(0x4469) <- 0x01;
+  Computer.Mem.write computer.mem 0x4469 0x01;
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x00 } }
   in
@@ -2407,7 +2585,7 @@ let%expect_test "testing INC ABSOLUTE Negative Flag (0xEE)" =
   (* LDA $44 *)
   let pgm = [ 0xEE; 0x69; 0x44 ] in
   let computer = init_test_computer 0x1000 pgm in
-  computer.banks.(0x4469) <- 0x7F;
+  Computer.Mem.write computer.mem 0x4469 0x7F;
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x00 } }
   in
@@ -2428,7 +2606,7 @@ let%expect_test "testing INC ABSOLUTE OverFlow (0xEE)" =
   (* LDA $44 *)
   let pgm = [ 0xEE; 0x69; 0x44 ] in
   let computer = init_test_computer 0x1000 pgm in
-  computer.banks.(0x4469) <- 0xFF;
+  Computer.Mem.write computer.mem 0x4269 0xFF;
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x80 } }
   in
@@ -2449,7 +2627,7 @@ let%expect_test "testing LSR IMMEDIATE Basic (0x4E)" =
   (* LDA $44 *)
   let pgm = [ 0x4E; 0x69; 0x44 ] in
   let computer = init_test_computer 0x1000 pgm in
-  computer.banks.(0x4469) <- 0x02;
+  Computer.Mem.write computer.mem 0x4469 0x02;
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x01 } }
   in
@@ -2470,7 +2648,7 @@ let%expect_test "testing LSR IMMEDIATE Shift Into (0x4E)" =
   (* LDA $44 *)
   let pgm = [ 0x4E; 0x69; 0x44 ] in
   let computer = init_test_computer 0x1000 pgm in
-  computer.banks.(0x4469) <- 0x01;
+  Computer.Mem.write computer.mem 0x4469 0x01;
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x00 } }
   in
@@ -2491,7 +2669,7 @@ let%expect_test "testing LSR IMMEDIATE Hign Bit clear  (0x4E)" =
   (* LDA $44 *)
   let pgm = [ 0x4E; 0x69; 0x44 ] in
   let computer = init_test_computer 0x1000 pgm in
-  computer.banks.(0x4469) <- 0x80;
+  Computer.Mem.write computer.mem 0x4469 0x80;
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x01 } }
   in
@@ -2512,7 +2690,7 @@ let%expect_test "testing ROL ABSOLUTE Carry to bit 0 (0x2E)" =
   (* LDA $44 *)
   let pgm = [ 0x2E; 0x69; 0x44 ] in
   let computer = init_test_computer 0x1000 pgm in
-  computer.banks.(0x4469) <- 0x00;
+  Computer.Mem.write computer.mem 0x4469 0x00;
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x03 } }
   in
@@ -2533,7 +2711,7 @@ let%expect_test "testing ROL ABSOLUTE Bit 7 to Carry (0x2E)" =
   (* LDA $44 *)
   let pgm = [ 0x2E; 0x69; 0x44 ] in
   let computer = init_test_computer 0x1000 pgm in
-  computer.banks.(0x4469) <- 0x80;
+  Computer.Mem.write computer.mem 0x4469 0x80;
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x80 } }
   in
@@ -2554,7 +2732,7 @@ let%expect_test "testing ROL ABSOLUTE Negative Flag (0x2E)" =
   (* LDA $44 *)
   let pgm = [ 0x2E; 0x69; 0x44 ] in
   let computer = init_test_computer 0x1000 pgm in
-  computer.banks.(0x4469) <- 0x40;
+  Computer.Mem.write computer.mem 0x4469 0x40;
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x00 } }
   in
@@ -2575,7 +2753,7 @@ let%expect_test "testing ROR ABSOLUTE Carry to Bit 7 (0x6E)" =
   (* LDA $44 *)
   let pgm = [ 0x6E; 0x69; 0x44 ] in
   let computer = init_test_computer 0x1000 pgm in
-  computer.banks.(0x4469) <- 0x00;
+  Computer.Mem.write computer.mem 0x4469 0x00;
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x03 } }
   in
@@ -2596,7 +2774,7 @@ let%expect_test "testing ROR ABSOLUTE Bit 0 to Carry (0x6E)" =
   (* LDA $44 *)
   let pgm = [ 0x6E; 0x69; 0x44 ] in
   let computer = init_test_computer 0x1000 pgm in
-  computer.banks.(0x4469) <- 0x01;
+  Computer.Mem.write computer.mem 0x4469 0x01;
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x00 } }
   in
@@ -2617,7 +2795,7 @@ let%expect_test "testing ROR ABSOLUTE Negative Flag (0x6E)" =
   (* LDA $44 *)
   let pgm = [ 0x6E; 0x69; 0x44 ] in
   let computer = init_test_computer 0x1000 pgm in
-  computer.banks.(0x4469) <- 0x7F;
+  Computer.Mem.write computer.mem 0x4469 0x7F;
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x01 } }
   in
@@ -2675,7 +2853,7 @@ let%expect_test "testing ASL ACCUMULATOR Negative FLag  (0x0A)" =
   let cycles = 2 in
   let pgm = [ 0x0A ] in
   let computer = init_test_computer 0x1000 pgm in
-  computer.banks.(0x44) <- 0x40;
+  Computer.Mem.write computer.mem 0x44 0x40;
   let computer =
     { computer with cpu = { computer.cpu with a = 0x40; x = 0x02; y = 0x03; sr = 0x00 } }
   in
@@ -2689,7 +2867,7 @@ let%expect_test "testing LSR ACCUMULATOR Basic (0x4A)" =
   let cycles = 2 in
   let pgm = [ 0x4A ] in
   let computer = init_test_computer 0x1000 pgm in
-  computer.banks.(0x44) <- 0x02;
+  Computer.Mem.write computer.mem 0x44 0x02;
   let computer =
     { computer with cpu = { computer.cpu with a = 0x02; x = 0x02; y = 0x03; sr = 0x01 } }
   in
@@ -3466,10 +3644,10 @@ let%expect_test "testing PLA IMPLIED Positive (0x68)" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x1FC) <- 0x0C;
-  computer.banks.(0x1FD) <- 0x1D;
-  computer.banks.(0x1FE) <- 0x10;
-  computer.banks.(0x1FF) <- 0x1F;
+  Computer.Mem.write computer.mem 0x1FC 0x0C;
+  Computer.Mem.write computer.mem 0x1FD 0x1D;
+  Computer.Mem.write computer.mem 0x1FE 0x10;
+  Computer.Mem.write computer.mem 0x1FF 0x1F;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -3485,10 +3663,10 @@ let%expect_test "testing PLA IMPLIED Negative (0x68)" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x1FC) <- 0x1C;
-  computer.banks.(0x1FD) <- 0x1D;
-  computer.banks.(0x1FE) <- 0x80;
-  computer.banks.(0x1FF) <- 0x1F;
+  Computer.Mem.write computer.mem 0x1FC 0x1C;
+  Computer.Mem.write computer.mem 0x1FD 0x1D;
+  Computer.Mem.write computer.mem 0x1FE 0x80;
+  Computer.Mem.write computer.mem 0x1FF 0x1F;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -3504,10 +3682,10 @@ let%expect_test "testing PLA IMPLIED Zero (0x68)" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x1FC) <- 0x1C;
-  computer.banks.(0x1FD) <- 0x1D;
-  computer.banks.(0x1FE) <- 0x00;
-  computer.banks.(0x1FF) <- 0x1F;
+  Computer.Mem.write computer.mem 0x1FC 0x1C;
+  Computer.Mem.write computer.mem 0x1FD 0x1D;
+  Computer.Mem.write computer.mem 0x1FE 0x00;
+  Computer.Mem.write computer.mem 0x1FF 0x1F;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -3523,14 +3701,14 @@ let%expect_test "testing PLP IMPLIED (0x28)" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x1FC) <- 0x1C;
-  computer.banks.(0x1FD) <- 0x1D;
-  computer.banks.(0x1FE) <- 0b1100_0011;
-  computer.banks.(0x1FF) <- 0x1F;
+  Computer.Mem.write computer.mem 0x1FC 0x1C;
+  Computer.Mem.write computer.mem 0x1FD 0x1D;
+  Computer.Mem.write computer.mem 0x1FE 0b1100_0011;
+  Computer.Mem.write computer.mem 0x1FF 0x1F;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
-    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1001 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFE sr: NV-BdiZC pc: 0x1001 inst: PLP |}]
+    {| ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1001 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFE sr: NV-bdiZC pc: 0x1001 inst: PLP |}]
 ;;
 
 let%expect_test "testing LDA ZEROPAGEX (0xB5) non-zero positive" =
@@ -3542,7 +3720,7 @@ let%expect_test "testing LDA ZEROPAGEX (0xB5) non-zero positive" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x46) <- 0x04;
+  Computer.Mem.write computer.mem 0x46 0x04;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -3558,7 +3736,7 @@ let%expect_test "testing LDA ZEROPAGEX (0xB5) non-zero negative" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x46) <- 0x84;
+  Computer.Mem.write computer.mem 0x46 0x84;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -3574,7 +3752,7 @@ let%expect_test "testing LDA ZEROPAGEX (0xB5) zero " =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x46) <- 0x00;
+  Computer.Mem.write computer.mem 0x46 0x00;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -3590,7 +3768,7 @@ let%expect_test "testing LDA ZEROPAGEX (0xB5) wrap around" =
       cpu = { computer.cpu with a = 0x01; x = 0xFF; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x43) <- 0x04;
+  Computer.Mem.write computer.mem 0x43 0x04;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -3606,7 +3784,7 @@ let%expect_test "testing LDY ZEROPAGEX (0xB4) non-zero positive" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x46) <- 0x04;
+  Computer.Mem.write computer.mem 0x46 0x04;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -3622,7 +3800,7 @@ let%expect_test "testing LDY ZEROPAGEX (0xB4) non-zero negative" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x46) <- 0x84;
+  Computer.Mem.write computer.mem 0x46 0x84;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -3638,7 +3816,7 @@ let%expect_test "testing LDY ZEROPAGEX (0xB4) zero " =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x46) <- 0x00;
+  Computer.Mem.write computer.mem 0x46 0x00;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -3654,7 +3832,7 @@ let%expect_test "testing LDY ZEROPAGEX (0xB4) wrap around" =
       cpu = { computer.cpu with a = 0x01; x = 0xFF; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x43) <- 0x04;
+  Computer.Mem.write computer.mem 0x43 0x04;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -3670,7 +3848,7 @@ let%expect_test "testing EOR ZEROPAGEX (0x55) non-zero positive" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x46) <- 0x04;
+  Computer.Mem.write computer.mem 0x46 0x04;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -3686,7 +3864,7 @@ let%expect_test "testing EOR ZEROPAGEX (0x55) non-zero negative" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x46) <- 0x84;
+  Computer.Mem.write computer.mem 0x46 0x84;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -3702,7 +3880,7 @@ let%expect_test "testing EOR ZEROPAGEX (0x55) zero " =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x46) <- 0x01;
+  Computer.Mem.write computer.mem 0x46 0x01;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -3718,7 +3896,7 @@ let%expect_test "testing EOR ZEROPAGEX (0x55) wrap around" =
       cpu = { computer.cpu with a = 0x01; x = 0xFF; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x43) <- 0x04;
+  Computer.Mem.write computer.mem 0x43 0x04;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -3734,7 +3912,7 @@ let%expect_test "testing AND ZEROPAGEX (0x35) non-zero positive" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x46) <- 0x05;
+  Computer.Mem.write computer.mem 0x46 0x05;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -3750,7 +3928,7 @@ let%expect_test "testing AND ZEROPAGEX (0x35) non-zero negative" =
       cpu = { computer.cpu with a = 0x81; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x46) <- 0x84;
+  Computer.Mem.write computer.mem 0x46 0x84;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -3766,7 +3944,7 @@ let%expect_test "testing AND ZEROPAGEX (0x35) zero " =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x46) <- 0x02;
+  Computer.Mem.write computer.mem 0x46 0x02;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -3782,7 +3960,7 @@ let%expect_test "testing AND ZEROPAGEX (0x35) wrap around" =
       cpu = { computer.cpu with a = 0x01; x = 0xFF; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x43) <- 0x05;
+  Computer.Mem.write computer.mem 0x43 0x05;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -3798,7 +3976,7 @@ let%expect_test "testing ORA ZEROPAGEX (0x15) non-zero positive" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x46) <- 0x05;
+  Computer.Mem.write computer.mem 0x46 0x05;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -3814,7 +3992,7 @@ let%expect_test "testing ORA ZEROPAGEX (0x15) non-zero negative" =
       cpu = { computer.cpu with a = 0x80; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x46) <- 0x04;
+  Computer.Mem.write computer.mem 0x46 0x04;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -3830,7 +4008,7 @@ let%expect_test "testing ORA ZEROPAGEX (0x15) zero " =
       cpu = { computer.cpu with a = 0x00; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x46) <- 0x00;
+  Computer.Mem.write computer.mem 0x46 0x00;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -3846,7 +4024,7 @@ let%expect_test "testing ORA ZEROPAGEX (0x15) wrap around" =
       cpu = { computer.cpu with a = 0x01; x = 0xFF; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x43) <- 0x05;
+  Computer.Mem.write computer.mem 0x43 0x05;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -3862,7 +4040,7 @@ let%expect_test "testing ADC ZEROPAGEX (0x75) non-zero positive" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x46) <- 0x05;
+  Computer.Mem.write computer.mem 0x46 0x05;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -3878,7 +4056,7 @@ let%expect_test "testing ADC ZEROPAGEX (0x75) Incoming carry" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x01 }
     }
   in
-  computer.banks.(0x46) <- 0x05;
+  Computer.Mem.write computer.mem 0x46 0x05;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -3894,7 +4072,7 @@ let%expect_test "testing ADC ZEROPAGEX (0x75) Genrating Carry " =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x46) <- 0xFF;
+  Computer.Mem.write computer.mem 0x46 0xFF;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -3910,7 +4088,7 @@ let%expect_test "testing ADC ZEROPAGEX (0x75) Pos+Pos=Neg" =
       cpu = { computer.cpu with a = 0x7F; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x46) <- 0x01;
+  Computer.Mem.write computer.mem 0x46 0x01;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -3926,7 +4104,7 @@ let%expect_test "testing ADC ZEROPAGEX (0x75) Pos+Neg" =
       cpu = { computer.cpu with a = 0x7F; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x46) <- 0x80;
+  Computer.Mem.write computer.mem 0x46 0x80;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -3942,7 +4120,7 @@ let%expect_test "testing ADC ZEROPAGEX (0x75) Neg+Neg=Pos" =
       cpu = { computer.cpu with a = 0x80; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x46) <- 0xFF;
+  Computer.Mem.write computer.mem 0x46 0xFF;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -3958,7 +4136,7 @@ let%expect_test "testing ADC ZEROPAGEX (0x75) wrap around" =
       cpu = { computer.cpu with a = 0x01; x = 0xFF; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x43) <- 0x05;
+  Computer.Mem.write computer.mem 0x43 0x05;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -3974,7 +4152,7 @@ let%expect_test "testing SBC ZEROPAGEX (0xF5) No Borrow" =
       cpu = { computer.cpu with a = 0x05; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x01 }
     }
   in
-  computer.banks.(0x46) <- 0x02;
+  Computer.Mem.write computer.mem 0x46 0x02;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -3990,7 +4168,7 @@ let%expect_test "testing SBC ZEROPAGEX (0xF5) with borrow" =
       cpu = { computer.cpu with a = 0x05; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x46) <- 0x02;
+  Computer.Mem.write computer.mem 0x46 0x02;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -4006,7 +4184,7 @@ let%expect_test "testing SBC ZEROPAGEX (0xF5) Underflow" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x01 }
     }
   in
-  computer.banks.(0x46) <- 0x02;
+  Computer.Mem.write computer.mem 0x46 0x02;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -4022,7 +4200,7 @@ let%expect_test "testing SBC ZEROPAGEX (0xF5) Overflow" =
       cpu = { computer.cpu with a = 0x80; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x01 }
     }
   in
-  computer.banks.(0x46) <- 0x01;
+  Computer.Mem.write computer.mem 0x46 0x01;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -4038,7 +4216,7 @@ let%expect_test "testing SBC ZEROPAGEX (0xF5) wrap around" =
       cpu = { computer.cpu with a = 0x05; x = 0xFF; y = 0x03; sp = 0xFD; sr = 0x01 }
     }
   in
-  computer.banks.(0x43) <- 0x02;
+  Computer.Mem.write computer.mem 0x43 0x02;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -4056,7 +4234,7 @@ let%expect_test "testing STA ZEROPAGEX (0x95)" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x46) <- 0xEA;
+  Computer.Mem.write computer.mem 0x46 0xEA;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   dump_last_execution_mem executions [ 0x46 ];
@@ -4078,7 +4256,7 @@ let%expect_test "testing STA ZEROPAGEX wrap around (0x95)" =
       cpu = { computer.cpu with a = 0x01; x = 0xFF; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x43) <- 0xEA;
+  Computer.Mem.write computer.mem 0x43 0xEA;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   dump_last_execution_mem executions [ 0x43 ];
@@ -4100,7 +4278,7 @@ let%expect_test "testing STY ZEROPAGEX (0x94)" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x46) <- 0xEA;
+  Computer.Mem.write computer.mem 0x46 0xEA;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   dump_last_execution_mem executions [ 0x46 ];
@@ -4122,7 +4300,7 @@ let%expect_test "testing STY ZEROPAGEX wrap around (0x94)" =
       cpu = { computer.cpu with a = 0x01; x = 0xFF; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x43) <- 0xEA;
+  Computer.Mem.write computer.mem 0x43 0xEA;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   dump_last_execution_mem executions [ 0x43 ];
@@ -4142,7 +4320,7 @@ let%expect_test "testing ASL ZEROPAGEX (0x16) Basic" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x46) <- 0x02;
+  Computer.Mem.write computer.mem 0x46 0x02;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   dump_last_execution_mem executions [ 0x46 ];
@@ -4162,7 +4340,7 @@ let%expect_test "testing ASL ZEROPAGEX (0x16) Shift out" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x46) <- 0x80;
+  Computer.Mem.write computer.mem 0x46 0x80;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   dump_last_execution_mem executions [ 0x46 ];
@@ -4182,7 +4360,7 @@ let%expect_test "testing ASL ZEROPAGEX (0x16) Negative Flag" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x46) <- 0x40;
+  Computer.Mem.write computer.mem 0x46 0x40;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   dump_last_execution_mem executions [ 0x46 ];
@@ -4202,7 +4380,7 @@ let%expect_test "testing ASL ZEROPAGEX (0x16) Wrap around" =
       cpu = { computer.cpu with a = 0x01; x = 0xFF; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x43) <- 0x02;
+  Computer.Mem.write computer.mem 0x43 0x02;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   dump_last_execution_mem executions [ 0x43 ];
@@ -4222,7 +4400,7 @@ let%expect_test "testing LSR ZEROPAGEX (0x56) Basic" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x46) <- 0x02;
+  Computer.Mem.write computer.mem 0x46 0x02;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   dump_last_execution_mem executions [ 0x46 ];
@@ -4242,7 +4420,7 @@ let%expect_test "testing LSR ZEROPAGEX (0x56) Shift out" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x46) <- 0x01;
+  Computer.Mem.write computer.mem 0x46 0x01;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   dump_last_execution_mem executions [ 0x46 ];
@@ -4262,7 +4440,7 @@ let%expect_test "testing LSR ZEROPAGEX (0x56) High bit clear" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x01 }
     }
   in
-  computer.banks.(0x46) <- 0x80;
+  Computer.Mem.write computer.mem 0x46 0x80;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   dump_last_execution_mem executions [ 0x46 ];
@@ -4282,7 +4460,7 @@ let%expect_test "testing LSR ZEROPAGEX (0x56) Wrap around" =
       cpu = { computer.cpu with a = 0x01; x = 0xFF; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x43) <- 0x02;
+  Computer.Mem.write computer.mem 0x43 0x02;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   dump_last_execution_mem executions [ 0x43 ];
@@ -4302,7 +4480,7 @@ let%expect_test "testing ROL ZEROPAGEX (0x36) Carry to bit 0" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x03 }
     }
   in
-  computer.banks.(0x46) <- 0x00;
+  Computer.Mem.write computer.mem 0x46 0x00;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   dump_last_execution_mem executions [ 0x46 ];
@@ -4322,7 +4500,7 @@ let%expect_test "testing ROL ZEROPAGEX (0x36) bit 7 to carry" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x80 }
     }
   in
-  computer.banks.(0x46) <- 0x80;
+  Computer.Mem.write computer.mem 0x46 0x80;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   dump_last_execution_mem executions [ 0x46 ];
@@ -4342,7 +4520,7 @@ let%expect_test "testing ROL ZEROPAGEX (0x36) Negative Flag" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x46) <- 0x40;
+  Computer.Mem.write computer.mem 0x46 0x40;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   dump_last_execution_mem executions [ 0x46 ];
@@ -4362,7 +4540,7 @@ let%expect_test "testing ROL ZEROPAGEX (0x36) Wrap Around" =
       cpu = { computer.cpu with a = 0x01; x = 0xFF; y = 0x03; sp = 0xFD; sr = 0x03 }
     }
   in
-  computer.banks.(0x43) <- 0x00;
+  Computer.Mem.write computer.mem 0x43 0x00;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   dump_last_execution_mem executions [ 0x43 ];
@@ -4370,7 +4548,7 @@ let%expect_test "testing ROL ZEROPAGEX (0x36) Wrap Around" =
     {|
     ab: 0x1002 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1002 data: 0xFF a: 0x01 x: 0xFF y: 0x03 sp: 0xFD sr: nv-bdizc pc: 0x1002 inst: ROL $44,X
     Mem: 0x0043 : 0x01
-    |}]
+   |}]
 ;;
 
 let%expect_test "testing ROR ZEROPAGEX (0x76) carry to bit 7" =
@@ -4382,7 +4560,7 @@ let%expect_test "testing ROR ZEROPAGEX (0x76) carry to bit 7" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x03 }
     }
   in
-  computer.banks.(0x46) <- 0x00;
+  Computer.Mem.write computer.mem 0x46 0x00;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   dump_last_execution_mem executions [ 0x46 ];
@@ -4402,7 +4580,7 @@ let%expect_test "testing ROR ZEROPAGEX (0x76) bit 0 to carry" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x46) <- 0x01;
+  Computer.Mem.write computer.mem 0x46 0x01;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   dump_last_execution_mem executions [ 0x46 ];
@@ -4422,7 +4600,7 @@ let%expect_test "testing ROR ZEROPAGEX (0x76) Negative Flag" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x01 }
     }
   in
-  computer.banks.(0x46) <- 0x7F;
+  Computer.Mem.write computer.mem 0x46 0x7F;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   dump_last_execution_mem executions [ 0x46 ];
@@ -4442,7 +4620,7 @@ let%expect_test "testing ROR ZEROPAGEX (0x76) Wrap Around" =
       cpu = { computer.cpu with a = 0x01; x = 0xFF; y = 0x03; sp = 0xFD; sr = 0x03 }
     }
   in
-  computer.banks.(0x43) <- 0x00;
+  Computer.Mem.write computer.mem 0x43 0x00;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   dump_last_execution_mem executions [ 0x43 ];
@@ -4462,7 +4640,7 @@ let%expect_test "testing CMP ZEROPAGEX (0xD5) Equality " =
       cpu = { computer.cpu with a = 0x42; x = 0x02; y = 0x03; sp = 0xFD; sr = 0xC0 }
     }
   in
-  computer.banks.(0x46) <- 0x42;
+  Computer.Mem.write computer.mem 0x46 0x42;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -4478,7 +4656,7 @@ let%expect_test "testing CMP ZEROPAGEX (0xD5) Greater than" =
       cpu = { computer.cpu with a = 0xFF; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x46) <- 0x01;
+  Computer.Mem.write computer.mem 0x46 0x01;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -4494,7 +4672,7 @@ let%expect_test "testing CMP ZEROPAGEX (0xD5) Less than" =
       cpu = { computer.cpu with a = 0x02; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x46) <- 0x03;
+  Computer.Mem.write computer.mem 0x46 0x03;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -4510,7 +4688,7 @@ let%expect_test "testing CMP ZEROPAGEX (0xD5) wrap around" =
       cpu = { computer.cpu with a = 0x42; x = 0xFF; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x43) <- 0x42;
+  Computer.Mem.write computer.mem 0x43 0x42;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -4526,7 +4704,7 @@ let%expect_test "testing DEC ZEROPAGEX (0xD6) Dec 1" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x46) <- 0x02;
+  Computer.Mem.write computer.mem 0x46 0x02;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   dump_last_execution_mem executions [ 0x46 ];
@@ -4546,7 +4724,7 @@ let%expect_test "testing DEC ZEROPAGEX (0xD6) Set negative flag" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x46) <- 0x00;
+  Computer.Mem.write computer.mem 0x46 0x00;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   dump_last_execution_mem executions [ 0x46 ];
@@ -4566,7 +4744,7 @@ let%expect_test "testing DEC ZEROPAGEX (0xD6) Unset negative flag" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x46) <- 0x80;
+  Computer.Mem.write computer.mem 0x46 0x80;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   dump_last_execution_mem executions [ 0x46 ];
@@ -4586,7 +4764,7 @@ let%expect_test "testing DEC ZEROPAGEX (0xD6) Dec to zero" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x46) <- 0x01;
+  Computer.Mem.write computer.mem 0x46 0x01;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   dump_last_execution_mem executions [ 0x46 ];
@@ -4606,7 +4784,7 @@ let%expect_test "testing DEC ZEROPAGEX (0xD6) Wrap around" =
       cpu = { computer.cpu with a = 0x01; x = 0xFF; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x43) <- 0x02;
+  Computer.Mem.write computer.mem 0x43 0x02;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   dump_last_execution_mem executions [ 0x43 ];
@@ -4626,7 +4804,7 @@ let%expect_test "testing INC ZEROPAGEX (0xF6) Inc 1" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x46) <- 0x02;
+  Computer.Mem.write computer.mem 0x46 0x02;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   dump_last_execution_mem executions [ 0x46 ];
@@ -4646,7 +4824,7 @@ let%expect_test "testing INC ZEROPAGEX (0xF6) Set negative flag" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x46) <- 0x7F;
+  Computer.Mem.write computer.mem 0x46 0x7F;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   dump_last_execution_mem executions [ 0x46 ];
@@ -4666,7 +4844,7 @@ let%expect_test "testing INC ZEROPAGEX (0xF6) Overflow" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x46) <- 0xFF;
+  Computer.Mem.write computer.mem 0x46 0xFF;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   dump_last_execution_mem executions [ 0x46 ];
@@ -4686,7 +4864,7 @@ let%expect_test "testing INC ZEROPAGEX (0xF6) Wrap around" =
       cpu = { computer.cpu with a = 0x01; x = 0xFF; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x43) <- 0x02;
+  Computer.Mem.write computer.mem 0x43 0x02;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   dump_last_execution_mem executions [ 0x43 ];
@@ -4706,7 +4884,7 @@ let%expect_test "testing LDX ZEROPAGEY (0xB6) non-zero positive" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x02; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x46) <- 0x04;
+  Computer.Mem.write computer.mem 0x46 0x04;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -4722,7 +4900,7 @@ let%expect_test "testing LDX ZEROPAGEY (0xB6) non-zero negative" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x02; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x46) <- 0x84;
+  Computer.Mem.write computer.mem 0x46 0x84;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -4738,7 +4916,7 @@ let%expect_test "testing LDX ZEROPAGEY (0xB6) zero " =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x02; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x46) <- 0x00;
+  Computer.Mem.write computer.mem 0x46 0x00;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -4754,13 +4932,12 @@ let%expect_test "testing LDX ZEROPAGEY (0xB6) wrap around" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0xFF; sp = 0xFD; sr = 0x00 }
     }
   in
-  (*
-  0x44 <- 0x50
+  (*p  0x44 <- 0x50
   x register = 0xFF
   LDA $0x44,X will read 0x50 and add 0xFF => 0x4F
   and a register should be the value ad 0x4F
 *)
-  computer.banks.(0x43) <- 0x04;
+  Computer.Mem.write computer.mem 0x43 0x04;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -4778,7 +4955,7 @@ let%expect_test "testing STX ZEROPAGEY (0x96)" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x47) <- 0xEA;
+  Computer.Mem.write computer.mem 0x47 0xEA;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   dump_last_execution_mem executions [ 0x47 ];
@@ -4800,7 +4977,7 @@ let%expect_test "testing STX ZEROPAGEY wrap around (0x96)" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0xFF; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x43) <- 0xEA;
+  Computer.Mem.write computer.mem 0x43 0xEA;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   dump_last_execution_mem executions [ 0x43 ];
@@ -4820,7 +4997,7 @@ let%expect_test "testing LDA ABSOLUTEX (0xBD) non-zero positive" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x6946) <- 0x04;
+  Computer.Mem.write computer.mem 0x6946 0x04;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -4836,7 +5013,7 @@ let%expect_test "testing LDA ABSOLUTEX (0xBD) non-zero negative" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x6946) <- 0x84;
+  Computer.Mem.write computer.mem 0x6946 0x84;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -4852,7 +5029,7 @@ let%expect_test "testing LDA ABSOLUTEX (0xBD) zero" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x6946) <- 0x00;
+  Computer.Mem.write computer.mem 0x6946 0x00;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -4868,7 +5045,7 @@ let%expect_test "testing LDA ABSOLUTEX (0xBD) Page Cross" =
       cpu = { computer.cpu with a = 0x01; x = 0xFF; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x6A43) <- 0x04;
+  Computer.Mem.write computer.mem 0x6A43 0x04;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -4884,7 +5061,7 @@ let%expect_test "testing LDY ABSOLUTEX (0xBC) non-zero positive" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x6946) <- 0x04;
+  Computer.Mem.write computer.mem 0x6946 0x04;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -4900,7 +5077,7 @@ let%expect_test "testing LDY ABSOLUTEX (0xBC) non-zero negative" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x6946) <- 0x84;
+  Computer.Mem.write computer.mem 0x6946 0x84;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -4916,7 +5093,7 @@ let%expect_test "testing LDY ZEROPAGEX (0xBC) zero " =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x6946) <- 0x00;
+  Computer.Mem.write computer.mem 0x6946 0x00;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -4932,7 +5109,7 @@ let%expect_test "testing LDY ABSOLUTE (0xBC) Page Cross" =
       cpu = { computer.cpu with a = 0x01; x = 0xFF; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x6A43) <- 0x04;
+  Computer.Mem.write computer.mem 0x6A43 0x04;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -4948,7 +5125,7 @@ let%expect_test "testing EOR ABSOLUTEX (0x5D) non-zero positive" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x6946) <- 0x04;
+  Computer.Mem.write computer.mem 0x6946 0x04;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -4964,7 +5141,7 @@ let%expect_test "testing EOR ABSOLUTEX (0x5D) non-zero negative" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x6946) <- 0x84;
+  Computer.Mem.write computer.mem 0x6946 0x84;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -4980,7 +5157,7 @@ let%expect_test "testing EOR ABSOLUTEX (0x5D) zero " =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x6946) <- 0x01;
+  Computer.Mem.write computer.mem 0x6946 0x01;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -4996,7 +5173,7 @@ let%expect_test "testing EOR ABSOLUTEX (0x5D) wrap around" =
       cpu = { computer.cpu with a = 0x01; x = 0xFF; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x6A43) <- 0x04;
+  Computer.Mem.write computer.mem 0x6A43 0x04;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -5012,7 +5189,7 @@ let%expect_test "testing AND ABSOLUTEX (0x3D) non-zero positive" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x6946) <- 0x05;
+  Computer.Mem.write computer.mem 0x6946 0x05;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -5028,7 +5205,7 @@ let%expect_test "testing AND ABSOLUTEX (0x3D) non-zero negative" =
       cpu = { computer.cpu with a = 0x81; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x6946) <- 0x84;
+  Computer.Mem.write computer.mem 0x6946 0x84;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -5044,7 +5221,7 @@ let%expect_test "testing AND ABSOLUTEX (0x3D) zero " =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x6946) <- 0x02;
+  Computer.Mem.write computer.mem 0x6946 0x02;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -5060,7 +5237,7 @@ let%expect_test "testing AND ABSOLUTEX (0x3D) Page Cross" =
       cpu = { computer.cpu with a = 0x01; x = 0xFF; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x6943) <- 0x05;
+  Computer.Mem.write computer.mem 0x6943 0x05;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -5076,7 +5253,7 @@ let%expect_test "testing ORA ABSOLUTEX (0x1D) non-zero positive" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x6946) <- 0x05;
+  Computer.Mem.write computer.mem 0x6946 0x05;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -5092,7 +5269,7 @@ let%expect_test "testing ORA ABSOLUTEX (0x1D) non-zero negative" =
       cpu = { computer.cpu with a = 0x80; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x6946) <- 0x04;
+  Computer.Mem.write computer.mem 0x6946 0x04;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -5108,7 +5285,7 @@ let%expect_test "testing ORA ABSOLUTEX (0x1D) zero " =
       cpu = { computer.cpu with a = 0x00; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x6946) <- 0x00;
+  Computer.Mem.write computer.mem 0x6946 0x00;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -5124,7 +5301,7 @@ let%expect_test "testing ORA ABSOLUTEX (0x1D) Page Cross" =
       cpu = { computer.cpu with a = 0x01; x = 0xFF; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x6A43) <- 0x05;
+  Computer.Mem.write computer.mem 0x6A43 0x05;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -5140,7 +5317,7 @@ let%expect_test "testing ADC ABSOLUTEX (0x7D) non-zero positive" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x6946) <- 0x05;
+  Computer.Mem.write computer.mem 0x6946 0x05;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -5156,7 +5333,7 @@ let%expect_test "testing ADC ABSOLUTEX (0x7D) Incoming carry" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x01 }
     }
   in
-  computer.banks.(0x6946) <- 0x05;
+  Computer.Mem.write computer.mem 0x6946 0x05;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -5172,7 +5349,7 @@ let%expect_test "testing ADC ABSOLUTEX (0x7D) Genrating Carry " =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x6946) <- 0xFF;
+  Computer.Mem.write computer.mem 0x6946 0xFF;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -5188,7 +5365,7 @@ let%expect_test "testing ADC ABSOLUTEX (0x7D) Pos+Pos=Neg" =
       cpu = { computer.cpu with a = 0x7F; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x6946) <- 0x01;
+  Computer.Mem.write computer.mem 0x6946 0x01;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -5204,7 +5381,7 @@ let%expect_test "testing ADC ABSOLUTEX (0x7D) Pos+Neg" =
       cpu = { computer.cpu with a = 0x7F; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x6946) <- 0x80;
+  Computer.Mem.write computer.mem 0x6946 0x80;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -5220,7 +5397,7 @@ let%expect_test "testing ADC ABSOLUTEX (0x7D) Neg+Neg=Pos" =
       cpu = { computer.cpu with a = 0x80; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x6946) <- 0xFF;
+  Computer.Mem.write computer.mem 0x6946 0xFF;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -5236,7 +5413,7 @@ let%expect_test "testing ADC ABSOLUTEX (0x7D) Page Cross" =
       cpu = { computer.cpu with a = 0x01; x = 0xFF; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x6A43) <- 0x05;
+  Computer.Mem.write computer.mem 0x6A43 0x05;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -5254,7 +5431,7 @@ let%expect_test "testing STA ABSOLUTEX (0x9D)" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x6946) <- 0xEA;
+  Computer.Mem.write computer.mem 0x6946 0xEA;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   dump_last_execution_mem executions [ 0x6946 ];
@@ -5276,7 +5453,7 @@ let%expect_test "testing STA ABSOLUTEX (0x9D) Cross PAge" =
       cpu = { computer.cpu with a = 0x01; x = 0xFF; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x6A43) <- 0xEA;
+  Computer.Mem.write computer.mem 0x6943 0xEA;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   dump_last_execution_mem executions [ 0x6A43 ];
@@ -5296,7 +5473,7 @@ let%expect_test "testing ASL ABSOLUTEX (0x1E) Basic" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x6946) <- 0x02;
+  Computer.Mem.write computer.mem 0x6946 0x02;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   dump_last_execution_mem executions [ 0x6946 ];
@@ -5316,7 +5493,7 @@ let%expect_test "testing ASL ABSOLUTEX (0x1E) Shift out" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x6946) <- 0x80;
+  Computer.Mem.write computer.mem 0x6946 0x80;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   dump_last_execution_mem executions [ 0x6946 ];
@@ -5336,7 +5513,7 @@ let%expect_test "testing ASL ABSOLUTEX (0x1E) Negative Flag" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x6946) <- 0x40;
+  Computer.Mem.write computer.mem 0x6946 0x40;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   dump_last_execution_mem executions [ 0x6946 ];
@@ -5356,7 +5533,7 @@ let%expect_test "testing ASL ABSOLUTEX (0x1E) Cross Page" =
       cpu = { computer.cpu with a = 0x01; x = 0xFF; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x6A43) <- 0x02;
+  Computer.Mem.write computer.mem 0x6A43 0x02;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   dump_last_execution_mem executions [ 0x6A43 ];
@@ -5376,7 +5553,7 @@ let%expect_test "testing CMP ABSOLUTEX (0xDD) Equality " =
       cpu = { computer.cpu with a = 0x42; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x6946) <- 0x42;
+  Computer.Mem.write computer.mem 0x6946 0x42;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -5392,7 +5569,7 @@ let%expect_test "testing CMP ABSOLUTEX (0xDD) Greater than" =
       cpu = { computer.cpu with a = 0xFF; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x6946) <- 0x01;
+  Computer.Mem.write computer.mem 0x6946 0x01;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -5408,7 +5585,7 @@ let%expect_test "testing CMP ABSOLUTEX (0xDD) Less than" =
       cpu = { computer.cpu with a = 0x02; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x6946) <- 0x03;
+  Computer.Mem.write computer.mem 0x6946 0x03;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -5424,7 +5601,7 @@ let%expect_test "testing CMP ABSOLUTEX (0xDD) PAge Cross" =
       cpu = { computer.cpu with a = 0x42; x = 0xFF; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x6A43) <- 0x42;
+  Computer.Mem.write computer.mem 0x6A43 0x42;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -5440,7 +5617,7 @@ let%expect_test "testing DEC ABSOLUTEX (0xDE) Dec 1" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x6946) <- 0x02;
+  Computer.Mem.write computer.mem 0x6946 0x02;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   dump_last_execution_mem executions [ 0x6946 ];
@@ -5460,7 +5637,7 @@ let%expect_test "testing DEC ABSOLUTEX (0xDE) Set negative flag" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x6946) <- 0x00;
+  Computer.Mem.write computer.mem 0x6946 0x00;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   dump_last_execution_mem executions [ 0x6946 ];
@@ -5480,7 +5657,7 @@ let%expect_test "testing DEC ABSOLUTEX (0xDE) Unset negative flag" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x6946) <- 0x80;
+  Computer.Mem.write computer.mem 0x6946 0x80;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   dump_last_execution_mem executions [ 0x6946 ];
@@ -5500,7 +5677,7 @@ let%expect_test "testing DEC ABSOLUTEX (0xDE) Dec to zero" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x6946) <- 0x01;
+  Computer.Mem.write computer.mem 0x6946 0x01;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   dump_last_execution_mem executions [ 0x6946 ];
@@ -5520,7 +5697,7 @@ let%expect_test "testing DEC ABSOLUTEX (0xDE) Page Cross" =
       cpu = { computer.cpu with a = 0x01; x = 0xFF; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x6A43) <- 0x02;
+  Computer.Mem.write computer.mem 0x6A43 0x02;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   dump_last_execution_mem executions [ 0x6A43 ];
@@ -5540,7 +5717,7 @@ let%expect_test "testing INC ABSOLUTEX (0xFE) Inc 1" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x6946) <- 0x02;
+  Computer.Mem.write computer.mem 0x6946 0x02;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   dump_last_execution_mem executions [ 0x6946 ];
@@ -5560,7 +5737,7 @@ let%expect_test "testing INC ABSOLUTEX (0xFE) Set negative flag" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x6946) <- 0x7F;
+  Computer.Mem.write computer.mem 0x6946 0x7F;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   dump_last_execution_mem executions [ 0x6946 ];
@@ -5580,7 +5757,7 @@ let%expect_test "testing INC ABSOLUTEX (0xFE) Overflow" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x6946) <- 0xFF;
+  Computer.Mem.write computer.mem 0x6946 0xFF;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   dump_last_execution_mem executions [ 0x6946 ];
@@ -5600,7 +5777,7 @@ let%expect_test "testing INC ABSOLUTEX (0xFE) Page Cross" =
       cpu = { computer.cpu with a = 0x01; x = 0xFF; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x6A43) <- 0x02;
+  Computer.Mem.write computer.mem 0x6A43 0x02;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   dump_last_execution_mem executions [ 0x6A43 ];
@@ -5620,7 +5797,7 @@ let%expect_test "testing ROR ABSOLUTEX (0x7E) carry to bit 7" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x03 }
     }
   in
-  computer.banks.(0x6946) <- 0x00;
+  Computer.Mem.write computer.mem 0x6946 0x00;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   dump_last_execution_mem executions [ 0x6946 ];
@@ -5640,7 +5817,7 @@ let%expect_test "testing ROR ABSOLUTEX (0x7E) bit 0 to carry" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x6946) <- 0x01;
+  Computer.Mem.write computer.mem 0x6946 0x01;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   dump_last_execution_mem executions [ 0x6946 ];
@@ -5660,7 +5837,7 @@ let%expect_test "testing ROR ABSOLUTEX (0x7E) Negative Flag" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x01 }
     }
   in
-  computer.banks.(0x6946) <- 0x7F;
+  Computer.Mem.write computer.mem 0x6946 0x7F;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   dump_last_execution_mem executions [ 0x6946 ];
@@ -5680,7 +5857,7 @@ let%expect_test "testing ROR ABSOLUTEX (0x7E) Page Cross" =
       cpu = { computer.cpu with a = 0x01; x = 0xFF; y = 0x03; sp = 0xFD; sr = 0x03 }
     }
   in
-  computer.banks.(0x6A43) <- 0x00;
+  Computer.Mem.write computer.mem 0x6A43 0x00;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   dump_last_execution_mem executions [ 0x6A43 ];
@@ -5700,7 +5877,7 @@ let%expect_test "testing ROL ABSOLUTEX (0x3E) Carry to bit 0" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x03 }
     }
   in
-  computer.banks.(0x6946) <- 0x00;
+  Computer.Mem.write computer.mem 0x6946 0x00;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   dump_last_execution_mem executions [ 0x6946 ];
@@ -5720,7 +5897,7 @@ let%expect_test "testing ROL ABSOLUTEX (0x3E) bit 7 to carry" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x80 }
     }
   in
-  computer.banks.(0x6946) <- 0x80;
+  Computer.Mem.write computer.mem 0x6946 0x80;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   dump_last_execution_mem executions [ 0x6946 ];
@@ -5740,7 +5917,7 @@ let%expect_test "testing ROL ABSOLUTEX (0x3E) Negative Flag" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x6946) <- 0x40;
+  Computer.Mem.write computer.mem 0x6946 0x40;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   dump_last_execution_mem executions [ 0x6946 ];
@@ -5760,7 +5937,7 @@ let%expect_test "testing ROL ABSOLUTEX (0x3E) Wrap Around" =
       cpu = { computer.cpu with a = 0x01; x = 0xFF; y = 0x03; sp = 0xFD; sr = 0x03 }
     }
   in
-  computer.banks.(0x6A43) <- 0x00;
+  Computer.Mem.write computer.mem 0x6A43 0x00;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   dump_last_execution_mem executions [ 0x6A43 ];
@@ -5780,7 +5957,7 @@ let%expect_test "testing LSR ABSOLUTEX (0x5E) Basic" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x6946) <- 0x02;
+  Computer.Mem.write computer.mem 0x6946 0x02;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   dump_last_execution_mem executions [ 0x6946 ];
@@ -5800,7 +5977,7 @@ let%expect_test "testing LSR ABSOLUTEX (0x5E) Shift out" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x6946) <- 0x01;
+  Computer.Mem.write computer.mem 0x6946 0x01;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   dump_last_execution_mem executions [ 0x6946 ];
@@ -5820,7 +5997,7 @@ let%expect_test "testing LSR ABSOLUTEX (0x5E) High bit clear" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x01 }
     }
   in
-  computer.banks.(0x6946) <- 0x80;
+  Computer.Mem.write computer.mem 0x6946 0x80;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   dump_last_execution_mem executions [ 0x6946 ];
@@ -5840,7 +6017,7 @@ let%expect_test "testing LSR ABSOLUTEX (0x5E) Page Cross" =
       cpu = { computer.cpu with a = 0x01; x = 0xFF; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x6A43) <- 0x02;
+  Computer.Mem.write computer.mem 0x6A43 0x02;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   dump_last_execution_mem executions [ 0x6A43 ];
@@ -5860,7 +6037,7 @@ let%expect_test "testing ADC ABSOLUTEY (0x79) non-zero positive" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x6947) <- 0x05;
+  Computer.Mem.write computer.mem 0x6947 0x05;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -5876,7 +6053,7 @@ let%expect_test "testing ADC ABSOLUTEY (0x79) Incoming carry" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x01 }
     }
   in
-  computer.banks.(0x6947) <- 0x05;
+  Computer.Mem.write computer.mem 0x6947 0x05;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -5892,7 +6069,7 @@ let%expect_test "testing ADC ABSOLUTEY (0x79) Genrating Carry " =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x6947) <- 0xFF;
+  Computer.Mem.write computer.mem 0x6947 0xFF;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -5908,7 +6085,7 @@ let%expect_test "testing ADC ABSOLUTEY (0x79) Pos+Pos=Neg" =
       cpu = { computer.cpu with a = 0x7F; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x6947) <- 0x01;
+  Computer.Mem.write computer.mem 0x6947 0x01;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -5924,7 +6101,7 @@ let%expect_test "testing ADC ABSOLUTEY (0x79) Pos+Neg" =
       cpu = { computer.cpu with a = 0x7F; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x6947) <- 0x80;
+  Computer.Mem.write computer.mem 0x6947 0x80;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -5940,7 +6117,7 @@ let%expect_test "testing ADC ABSOLUTEY (0x79) Neg+Neg=Pos" =
       cpu = { computer.cpu with a = 0x80; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x6947) <- 0xFF;
+  Computer.Mem.write computer.mem 0x6947 0xFF;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -5956,7 +6133,7 @@ let%expect_test "testing ADC ABSOLUTEY (0x79) Page Cross" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0xFF; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x6A43) <- 0x05;
+  Computer.Mem.write computer.mem 0x6A43 0x05;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -5972,7 +6149,7 @@ let%expect_test "testing STA ABSOLUTEY (0x99)" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x6947) <- 0xEA;
+  Computer.Mem.write computer.mem 0x6947 0xEA;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   dump_last_execution_mem executions [ 0x6947 ];
@@ -5992,7 +6169,7 @@ let%expect_test "testing STA ABSOLUTEY (0x99) Cross PAge" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0xFF; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x6A43) <- 0xEA;
+  Computer.Mem.write computer.mem 0x6A43 0xEA;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   dump_last_execution_mem executions [ 0x6A43 ];
@@ -6012,7 +6189,7 @@ let%expect_test "testing ORA ABSOLUTEY (0x19) non-zero positive" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x6947) <- 0x05;
+  Computer.Mem.write computer.mem 0x6947 0x05;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -6028,7 +6205,7 @@ let%expect_test "testing ORA ABSOLUTEY (0x19) non-zero negative" =
       cpu = { computer.cpu with a = 0x80; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x6947) <- 0x04;
+  Computer.Mem.write computer.mem 0x6947 0x04;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -6044,7 +6221,7 @@ let%expect_test "testing ORA ABSOLUTEY (0x19) zero " =
       cpu = { computer.cpu with a = 0x00; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x6947) <- 0x00;
+  Computer.Mem.write computer.mem 0x6947 0x00;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -6060,7 +6237,7 @@ let%expect_test "testing ORA ABSOLUTEY (0x19) Page Cross" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0xFF; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x6A43) <- 0x05;
+  Computer.Mem.write computer.mem 0x6A43 0x05;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -6076,7 +6253,7 @@ let%expect_test "testing AND ABSOLUTEY (0x39) non-zero positive" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x6946) <- 0x05;
+  Computer.Mem.write computer.mem 0x6946 0x05;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -6092,7 +6269,7 @@ let%expect_test "testing AND ABSOLUTEY (0x39) non-zero negative" =
       cpu = { computer.cpu with a = 0x81; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x6947) <- 0x84;
+  Computer.Mem.write computer.mem 0x6947 0x84;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -6108,7 +6285,7 @@ let%expect_test "testing AND ABSOLUTEY (0x39) zero " =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x6947) <- 0x02;
+  Computer.Mem.write computer.mem 0x6947 0x02;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -6124,7 +6301,7 @@ let%expect_test "testing AND ABSOLUTEY (0x39) Page Cross" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0xFF; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x6A43) <- 0x05;
+  Computer.Mem.write computer.mem 0x6A43 0x05;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -6140,7 +6317,7 @@ let%expect_test "testing EOR ABSOLUTEY (0x59) non-zero positive" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x6947) <- 0x04;
+  Computer.Mem.write computer.mem 0x6947 0x04;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -6156,7 +6333,7 @@ let%expect_test "testing EOR ABSOLUTEY (0x59) non-zero negative" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x6947) <- 0x84;
+  Computer.Mem.write computer.mem 0x6947 0x84;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -6172,7 +6349,7 @@ let%expect_test "testing EOR ABSOLUTEY (0x59) zero " =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x6947) <- 0x01;
+  Computer.Mem.write computer.mem 0x6947 0x01;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -6188,7 +6365,7 @@ let%expect_test "testing EOR ABSOLUTEY (0x59) Page Cross" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0xFF; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x6A43) <- 0x04;
+  Computer.Mem.write computer.mem 0x6A43 0x04;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -6204,7 +6381,7 @@ let%expect_test "testing CMP ABSOLUTEY (0xD9) Equality " =
       cpu = { computer.cpu with a = 0x42; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x6947) <- 0x42;
+  Computer.Mem.write computer.mem 0x6947 0x42;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -6220,7 +6397,7 @@ let%expect_test "testing CMP ABSOLUTEY (0xD9) Greater than" =
       cpu = { computer.cpu with a = 0xFF; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x6947) <- 0x01;
+  Computer.Mem.write computer.mem 0x6947 0x01;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -6236,7 +6413,7 @@ let%expect_test "testing CMP ABSOLUTEY (0xD9) Less than" =
       cpu = { computer.cpu with a = 0x02; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x6947) <- 0x03;
+  Computer.Mem.write computer.mem 0x6947 0x03;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -6252,7 +6429,7 @@ let%expect_test "testing CMP ABSOLUTEY (0xD9) PAge Cross" =
       cpu = { computer.cpu with a = 0x42; x = 0x02; y = 0xFF; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x6A43) <- 0x42;
+  Computer.Mem.write computer.mem 0x6A43 0x42;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -6268,7 +6445,7 @@ let%expect_test "testing LDA ABSOLUTEX (0xB9) non-zero positive" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x6947) <- 0x04;
+  Computer.Mem.write computer.mem 0x6947 0x04;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -6284,7 +6461,7 @@ let%expect_test "testing LDA ABSOLITEX (0xB9) non-zero negative" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x6947) <- 0x84;
+  Computer.Mem.write computer.mem 0x6947 0x84;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -6300,7 +6477,7 @@ let%expect_test "testing LDA ABSOLITEX (0xB9) zero" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x6947) <- 0x00;
+  Computer.Mem.write computer.mem 0x6947 0x00;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -6316,7 +6493,7 @@ let%expect_test "testing LDA ABSOLITEX (0xB9) Page Cross" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0xFF; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x6A43) <- 0x04;
+  Computer.Mem.write computer.mem 0x6A43 0x04;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -6332,7 +6509,7 @@ let%expect_test "testing LDX ABSOLUTEY (0xBE) non-zero positive" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x6947) <- 0x04;
+  Computer.Mem.write computer.mem 0x6947 0x04;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -6348,7 +6525,7 @@ let%expect_test "testing LDX ABSOLUTEY (0xBE) non-zero negative" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x6947) <- 0x84;
+  Computer.Mem.write computer.mem 0x6947 0x84;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -6364,7 +6541,7 @@ let%expect_test "testing LDX ABSOLUTEY (0xBE) zero " =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x6947) <- 0x00;
+  Computer.Mem.write computer.mem 0x6947 0x00;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -6380,7 +6557,7 @@ let%expect_test "testing LDX ABSOLUTEY (0xBE) Page Cross" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0xFF; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x6A43) <- 0x04;
+  Computer.Mem.write computer.mem 0x6A43 0x04;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -6396,7 +6573,7 @@ let%expect_test "testing SBC ABSOLUTEY (0xF9) No Borrow" =
       cpu = { computer.cpu with a = 0x05; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x01 }
     }
   in
-  computer.banks.(0x6947) <- 0x02;
+  Computer.Mem.write computer.mem 0x6947 0x02;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -6412,7 +6589,7 @@ let%expect_test "testing SBC ABSOLUTEY (0xF9) with borrow" =
       cpu = { computer.cpu with a = 0x05; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x6947) <- 0x02;
+  Computer.Mem.write computer.mem 0x6947 0x02;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -6428,7 +6605,7 @@ let%expect_test "testing SBC ABSOLUTEY (0xF9) Underflow" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x01 }
     }
   in
-  computer.banks.(0x6947) <- 0x02;
+  Computer.Mem.write computer.mem 0x6947 0x02;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -6444,7 +6621,7 @@ let%expect_test "testing SBC ABSOLUTEY (0xF9) Overflow" =
       cpu = { computer.cpu with a = 0x80; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x01 }
     }
   in
-  computer.banks.(0x6947) <- 0x01;
+  Computer.Mem.write computer.mem 0x6947 0x01;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -6460,7 +6637,7 @@ let%expect_test "testing SBC ABSOLUTEY (0xF9) Page Cross" =
       cpu = { computer.cpu with a = 0x05; x = 0x02; y = 0xFF; sp = 0xFD; sr = 0x01 }
     }
   in
-  computer.banks.(0x6A43) <- 0x02;
+  Computer.Mem.write computer.mem 0x6A43 0x02;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -6476,7 +6653,7 @@ let%expect_test "testing SBC ABSOLUTE (0xED) No Borrow" =
       cpu = { computer.cpu with a = 0x05; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x01 }
     }
   in
-  computer.banks.(0x6944) <- 0x02;
+  Computer.Mem.write computer.mem 0x6944 0x02;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -6492,7 +6669,7 @@ let%expect_test "testing SBC ABSOLUTE (0xED) with borrow" =
       cpu = { computer.cpu with a = 0x05; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x6944) <- 0x02;
+  Computer.Mem.write computer.mem 0x6944 0x02;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -6508,7 +6685,7 @@ let%expect_test "testing SBC ABSOLUTE (0xED) Underflow" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x01 }
     }
   in
-  computer.banks.(0x6944) <- 0x02;
+  Computer.Mem.write computer.mem 0x6944 0x02;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -6524,7 +6701,7 @@ let%expect_test "testing SBC ABSOLUTE (0xED) Overflow" =
       cpu = { computer.cpu with a = 0x80; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x01 }
     }
   in
-  computer.banks.(0x6944) <- 0x01;
+  Computer.Mem.write computer.mem 0x6944 0x01;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -6540,7 +6717,7 @@ let%expect_test "testing SBC ABSOLUTEX (0xFD) No Borrow" =
       cpu = { computer.cpu with a = 0x05; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x01 }
     }
   in
-  computer.banks.(0x6946) <- 0x02;
+  Computer.Mem.write computer.mem 0x6946 0x02;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -6556,7 +6733,7 @@ let%expect_test "testing SBC ABSOLUTEX (0xFD) with borrow" =
       cpu = { computer.cpu with a = 0x05; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x6946) <- 0x02;
+  Computer.Mem.write computer.mem 0x6946 0x02;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -6572,7 +6749,7 @@ let%expect_test "testing SBC ABSOLUTEX (0xFD) Underflow" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x01 }
     }
   in
-  computer.banks.(0x6946) <- 0x02;
+  Computer.Mem.write computer.mem 0x6946 0x02;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -6588,7 +6765,7 @@ let%expect_test "testing SBC ABSOLUTEX (0xFD) Overflow" =
       cpu = { computer.cpu with a = 0x80; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x01 }
     }
   in
-  computer.banks.(0x6946) <- 0x01;
+  Computer.Mem.write computer.mem 0x6946 0x01;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -6604,7 +6781,7 @@ let%expect_test "testing SBC ABSOLUTEX (0xFD) Page Cross" =
       cpu = { computer.cpu with a = 0x05; x = 0xFF; y = 0x03; sp = 0xFD; sr = 0x01 }
     }
   in
-  computer.banks.(0x6A43) <- 0x02;
+  Computer.Mem.write computer.mem 0x6A43 0x02;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -6680,9 +6857,9 @@ let%expect_test "testing LDA INDEXEDINDIRECT (0xA1) non-zero positive" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x46) <- 0x10;
-  computer.banks.(0x47) <- 0xC0;
-  computer.banks.(0xC010) <- 0x04;
+  Computer.Mem.write computer.mem 0x46 0x10;
+  Computer.Mem.write computer.mem 0x47 0xC0;
+  Computer.Mem.write computer.mem 0xC010 0x04;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -6698,9 +6875,9 @@ let%expect_test "testing LDA INDEXEDINDIRECT (0xA1) non-zero negative" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x46) <- 0x10;
-  computer.banks.(0x47) <- 0xC0;
-  computer.banks.(0xC010) <- 0x84;
+  Computer.Mem.write computer.mem 0x46 0x10;
+  Computer.Mem.write computer.mem 0x47 0xC0;
+  Computer.Mem.write computer.mem 0xC010 0x84;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -6716,9 +6893,9 @@ let%expect_test "testing LDA INDEXEDINDIRECT (0xA1) zero" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x46) <- 0x10;
-  computer.banks.(0x47) <- 0xC0;
-  computer.banks.(0xC010) <- 0x00;
+  Computer.Mem.write computer.mem 0x46 0x10;
+  Computer.Mem.write computer.mem 0x47 0xC0;
+  Computer.Mem.write computer.mem 0xC010 0x00;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -6734,9 +6911,9 @@ let%expect_test "testing LDA INDEXEDINDIRECT (0xA1) End of page" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0xFF) <- 0x10;
-  computer.banks.(0x00) <- 0xC0;
-  computer.banks.(0xC010) <- 0x04;
+  Computer.Mem.write computer.mem 0xFF 0x10;
+  Computer.Mem.write computer.mem 0x00 0xC0;
+  Computer.Mem.write computer.mem 0xC010 0x04;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -6752,9 +6929,9 @@ let%expect_test "testing EOR INDEXEDINDIRECT (0x41) non-zero positive" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x46) <- 0x10;
-  computer.banks.(0x47) <- 0xC0;
-  computer.banks.(0xC010) <- 0x04;
+  Computer.Mem.write computer.mem 0x46 0x10;
+  Computer.Mem.write computer.mem 0x47 0xC0;
+  Computer.Mem.write computer.mem 0xC010 0x04;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -6770,9 +6947,9 @@ let%expect_test "testing EOR INDEXEDINDIRECT (0x41) non-zero negative" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x46) <- 0x10;
-  computer.banks.(0x47) <- 0xC0;
-  computer.banks.(0xC010) <- 0x84;
+  Computer.Mem.write computer.mem 0x46 0x10;
+  Computer.Mem.write computer.mem 0x47 0xC0;
+  Computer.Mem.write computer.mem 0xC010 0x84;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -6788,9 +6965,9 @@ let%expect_test "testing EOR INDEXEDINDIRECT (0x41) zero" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x46) <- 0x10;
-  computer.banks.(0x47) <- 0xC0;
-  computer.banks.(0xC010) <- 0x01;
+  Computer.Mem.write computer.mem 0x46 0x10;
+  Computer.Mem.write computer.mem 0x47 0xC0;
+  Computer.Mem.write computer.mem 0xC010 0x01;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -6806,9 +6983,9 @@ let%expect_test "testing EOR INDEXEDINDIRECT (0x41) End of page" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0xFF) <- 0x10;
-  computer.banks.(0x00) <- 0xC0;
-  computer.banks.(0xC010) <- 0x04;
+  Computer.Mem.write computer.mem 0xFF 0x10;
+  Computer.Mem.write computer.mem 0x00 0xC0;
+  Computer.Mem.write computer.mem 0xC010 0x04;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -6824,9 +7001,9 @@ let%expect_test "testing AND INDEXEDINDIRECT (0x21) non-zero positive" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x46) <- 0x10;
-  computer.banks.(0x47) <- 0xC0;
-  computer.banks.(0xC010) <- 0x05;
+  Computer.Mem.write computer.mem 0x46 0x10;
+  Computer.Mem.write computer.mem 0x47 0xC0;
+  Computer.Mem.write computer.mem 0xC010 0x05;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -6842,9 +7019,9 @@ let%expect_test "testing AND INDEXEDINDIRECT (0x21) non-zero negative" =
       cpu = { computer.cpu with a = 0x81; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x46) <- 0x10;
-  computer.banks.(0x47) <- 0xC0;
-  computer.banks.(0xC010) <- 0x84;
+  Computer.Mem.write computer.mem 0x46 0x10;
+  Computer.Mem.write computer.mem 0x47 0xC0;
+  Computer.Mem.write computer.mem 0xC010 0x84;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -6860,9 +7037,9 @@ let%expect_test "testing AND INDEXEDINDIRECT (0x21) zero" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x46) <- 0x10;
-  computer.banks.(0x47) <- 0xC0;
-  computer.banks.(0xC010) <- 0x02;
+  Computer.Mem.write computer.mem 0x46 0x10;
+  Computer.Mem.write computer.mem 0x47 0xC0;
+  Computer.Mem.write computer.mem 0xC010 0x02;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -6878,9 +7055,9 @@ let%expect_test "testing AND INDEXEDINDIRECT (0x21) End of page" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0xFF) <- 0x10;
-  computer.banks.(0x00) <- 0xC0;
-  computer.banks.(0xC010) <- 0x05;
+  Computer.Mem.write computer.mem 0xFF 0x10;
+  Computer.Mem.write computer.mem 0x00 0xC0;
+  Computer.Mem.write computer.mem 0xC010 0x05;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -6896,9 +7073,9 @@ let%expect_test "testing ORA INDEXEDINDIRECT (0x01) non-zero positive" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x46) <- 0x10;
-  computer.banks.(0x47) <- 0xC0;
-  computer.banks.(0xC010) <- 0x05;
+  Computer.Mem.write computer.mem 0x46 0x10;
+  Computer.Mem.write computer.mem 0x47 0xC0;
+  Computer.Mem.write computer.mem 0xC010 0x05;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -6914,9 +7091,9 @@ let%expect_test "testing ORA INDEXEDINDIRECT (0x01) non-zero negative" =
       cpu = { computer.cpu with a = 0x80; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x46) <- 0x10;
-  computer.banks.(0x47) <- 0xC0;
-  computer.banks.(0xC010) <- 0x04;
+  Computer.Mem.write computer.mem 0x46 0x10;
+  Computer.Mem.write computer.mem 0x47 0xC0;
+  Computer.Mem.write computer.mem 0xC010 0x04;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -6932,9 +7109,9 @@ let%expect_test "testing ORA INDEXEDINDIRECT (0x01) zero" =
       cpu = { computer.cpu with a = 0x00; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x46) <- 0x10;
-  computer.banks.(0x47) <- 0xC0;
-  computer.banks.(0xC010) <- 0x00;
+  Computer.Mem.write computer.mem 0x46 0x10;
+  Computer.Mem.write computer.mem 0x47 0xC0;
+  Computer.Mem.write computer.mem 0xC010 0x00;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -6950,9 +7127,9 @@ let%expect_test "testing ORA INDEXEDINDIRECT (0x01) End of page" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0xFF) <- 0x10;
-  computer.banks.(0x00) <- 0xC0;
-  computer.banks.(0xC010) <- 0x05;
+  Computer.Mem.write computer.mem 0xFF 0x10;
+  Computer.Mem.write computer.mem 0x00 0xC0;
+  Computer.Mem.write computer.mem 0xC010 0x05;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -6968,9 +7145,9 @@ let%expect_test "testing ADC INDEXEDINDIRECT (0x61) non-zero positive" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x46) <- 0x10;
-  computer.banks.(0x47) <- 0xC0;
-  computer.banks.(0xC010) <- 0x05;
+  Computer.Mem.write computer.mem 0x46 0x10;
+  Computer.Mem.write computer.mem 0x47 0xC0;
+  Computer.Mem.write computer.mem 0xC010 0x05;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -6986,9 +7163,9 @@ let%expect_test "testing ADC INDEXEDINDIRECT (0x61) Incoming carry" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x01 }
     }
   in
-  computer.banks.(0x46) <- 0x10;
-  computer.banks.(0x47) <- 0xC0;
-  computer.banks.(0xC010) <- 0x05;
+  Computer.Mem.write computer.mem 0x46 0x10;
+  Computer.Mem.write computer.mem 0x47 0xC0;
+  Computer.Mem.write computer.mem 0xC010 0x05;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -7004,9 +7181,9 @@ let%expect_test "testing ADC INDEXEDINDIRECT (0x61) Generating Carry" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x46) <- 0x10;
-  computer.banks.(0x47) <- 0xC0;
-  computer.banks.(0xC010) <- 0xFF;
+  Computer.Mem.write computer.mem 0x46 0x10;
+  Computer.Mem.write computer.mem 0x47 0xC0;
+  Computer.Mem.write computer.mem 0xC010 0xFF;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -7022,9 +7199,9 @@ let%expect_test "testing ADC INDEXEDINDIRECT (0x61) Pos+Pos=Neg" =
       cpu = { computer.cpu with a = 0x7F; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x46) <- 0x10;
-  computer.banks.(0x47) <- 0xC0;
-  computer.banks.(0xC010) <- 0x01;
+  Computer.Mem.write computer.mem 0x46 0x10;
+  Computer.Mem.write computer.mem 0x47 0xC0;
+  Computer.Mem.write computer.mem 0xC010 0x01;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -7040,9 +7217,9 @@ let%expect_test "testing ADC INDEXEDINDIRECT (0x61) Pos+Neg" =
       cpu = { computer.cpu with a = 0x7F; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x46) <- 0x10;
-  computer.banks.(0x47) <- 0xC0;
-  computer.banks.(0xC010) <- 0x80;
+  Computer.Mem.write computer.mem 0x46 0x10;
+  Computer.Mem.write computer.mem 0x47 0xC0;
+  Computer.Mem.write computer.mem 0xC010 0x80;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -7058,9 +7235,9 @@ let%expect_test "testing ADC INDEXEDINDIRECT (0x61) Neg+Neg=Pos" =
       cpu = { computer.cpu with a = 0x80; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x46) <- 0x10;
-  computer.banks.(0x47) <- 0xC0;
-  computer.banks.(0xC010) <- 0xFF;
+  Computer.Mem.write computer.mem 0x46 0x10;
+  Computer.Mem.write computer.mem 0x47 0xC0;
+  Computer.Mem.write computer.mem 0xC010 0xFF;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -7076,9 +7253,9 @@ let%expect_test "testing ADC INDEXEDINDIRECT (0x61) End of Page" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0xFF) <- 0x10;
-  computer.banks.(0x00) <- 0xC0;
-  computer.banks.(0xC010) <- 0x05;
+  Computer.Mem.write computer.mem 0xFF 0x10;
+  Computer.Mem.write computer.mem 0x00 0xC0;
+  Computer.Mem.write computer.mem 0xC010 0x05;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -7094,9 +7271,9 @@ let%expect_test "testing STA INDEXEDINDIRECT (0x81)" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x46) <- 0x10;
-  computer.banks.(0x47) <- 0xC0;
-  computer.banks.(0xC010) <- 0xEA;
+  Computer.Mem.write computer.mem 0x46 0x10;
+  Computer.Mem.write computer.mem 0x47 0xC0;
+  Computer.Mem.write computer.mem 0xC010 0xEA;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   dump_last_execution_mem executions [ 0xC010 ];
@@ -7116,9 +7293,9 @@ let%expect_test "testing CMP INDEXEDINDIRECT (0xC1) Equality" =
       cpu = { computer.cpu with a = 0x42; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x46) <- 0x10;
-  computer.banks.(0x47) <- 0xC0;
-  computer.banks.(0xC010) <- 0x42;
+  Computer.Mem.write computer.mem 0x46 0x10;
+  Computer.Mem.write computer.mem 0x47 0xC0;
+  Computer.Mem.write computer.mem 0xC010 0x42;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -7134,9 +7311,9 @@ let%expect_test "testing CMP INDEXEDINDIRECT (0xC1) Greater Than" =
       cpu = { computer.cpu with a = 0xFF; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x46) <- 0x10;
-  computer.banks.(0x47) <- 0xC0;
-  computer.banks.(0xC010) <- 0x01;
+  Computer.Mem.write computer.mem 0x46 0x10;
+  Computer.Mem.write computer.mem 0x47 0xC0;
+  Computer.Mem.write computer.mem 0xC010 0x01;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -7152,9 +7329,9 @@ let%expect_test "testing CMP INDEXEDINDIRECT (0xC1) Less Than" =
       cpu = { computer.cpu with a = 0x02; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x46) <- 0x10;
-  computer.banks.(0x47) <- 0xC0;
-  computer.banks.(0xC010) <- 0x03;
+  Computer.Mem.write computer.mem 0x46 0x10;
+  Computer.Mem.write computer.mem 0x47 0xC0;
+  Computer.Mem.write computer.mem 0xC010 0x03;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -7170,9 +7347,9 @@ let%expect_test "testing CMP INDEXEDINDIRECT (0xC1) End of Page" =
       cpu = { computer.cpu with a = 0x42; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0xFF) <- 0x10;
-  computer.banks.(0x00) <- 0xC0;
-  computer.banks.(0xC010) <- 0x42;
+  Computer.Mem.write computer.mem 0xFF 0x10;
+  Computer.Mem.write computer.mem 0x00 0xC0;
+  Computer.Mem.write computer.mem 0xC010 0x42;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -7188,9 +7365,9 @@ let%expect_test "testing SBC INDEXEDINDIRECT (0xE1) No Borrow" =
       cpu = { computer.cpu with a = 0x05; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x01 }
     }
   in
-  computer.banks.(0x46) <- 0x10;
-  computer.banks.(0x47) <- 0xC0;
-  computer.banks.(0xC010) <- 0x02;
+  Computer.Mem.write computer.mem 0x46 0x10;
+  Computer.Mem.write computer.mem 0x47 0xC0;
+  Computer.Mem.write computer.mem 0xC010 0x02;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -7206,9 +7383,9 @@ let%expect_test "testing SBC INDEXEDINDIRECT (0xE1) With  Borrow" =
       cpu = { computer.cpu with a = 0x05; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x46) <- 0x10;
-  computer.banks.(0x47) <- 0xC0;
-  computer.banks.(0xC010) <- 0x02;
+  Computer.Mem.write computer.mem 0x46 0x10;
+  Computer.Mem.write computer.mem 0x47 0xC0;
+  Computer.Mem.write computer.mem 0xC010 0x02;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -7224,9 +7401,9 @@ let%expect_test "testing SBC INDEXEDINDIRECT (0xE1) Underflow" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x01 }
     }
   in
-  computer.banks.(0x46) <- 0x10;
-  computer.banks.(0x47) <- 0xC0;
-  computer.banks.(0xC010) <- 0x02;
+  Computer.Mem.write computer.mem 0x46 0x10;
+  Computer.Mem.write computer.mem 0x47 0xC0;
+  Computer.Mem.write computer.mem 0xC010 0x02;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -7242,9 +7419,9 @@ let%expect_test "testing SBC INDEXEDINDIRECT (0xE1) Overflow" =
       cpu = { computer.cpu with a = 0x80; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x01 }
     }
   in
-  computer.banks.(0x46) <- 0x10;
-  computer.banks.(0x47) <- 0xC0;
-  computer.banks.(0xC010) <- 0x01;
+  Computer.Mem.write computer.mem 0x46 0x10;
+  Computer.Mem.write computer.mem 0x47 0xC0;
+  Computer.Mem.write computer.mem 0xC010 0x01;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -7260,9 +7437,9 @@ let%expect_test "testing SBC INDEXEDINDIRECT (0xE1) End of Page" =
       cpu = { computer.cpu with a = 0x05; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x01 }
     }
   in
-  computer.banks.(0xFF) <- 0x10;
-  computer.banks.(0x00) <- 0xC0;
-  computer.banks.(0xC010) <- 0x02;
+  Computer.Mem.write computer.mem 0xFF 0x10;
+  Computer.Mem.write computer.mem 0x00 0xC0;
+  Computer.Mem.write computer.mem 0xC010 0x02;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -7278,9 +7455,9 @@ let%expect_test "testing LDA INDIRECTINDEXED (0xB1) non-zero positive" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x44) <- 0x10;
-  computer.banks.(0x45) <- 0xC0;
-  computer.banks.(0xC013) <- 0x04;
+  Computer.Mem.write computer.mem 0x44 0x10;
+  Computer.Mem.write computer.mem 0x45 0xC0;
+  Computer.Mem.write computer.mem 0xC013 0x04;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -7296,9 +7473,9 @@ let%expect_test "testing LDA INDIRECTINDEXED (0xB1) Page Cross" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0xFF; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x44) <- 0x10;
-  computer.banks.(0x45) <- 0xC0;
-  computer.banks.(0xC10F) <- 0x04;
+  Computer.Mem.write computer.mem 0x44 0x10;
+  Computer.Mem.write computer.mem 0x45 0xC0;
+  Computer.Mem.write computer.mem 0xC10F 0x04;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -7314,9 +7491,9 @@ let%expect_test "testing LDA INDIRECTINDEXED (0xB1) non-zero negative" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x44) <- 0x10;
-  computer.banks.(0x45) <- 0xC0;
-  computer.banks.(0xC013) <- 0x84;
+  Computer.Mem.write computer.mem 0x44 0x10;
+  Computer.Mem.write computer.mem 0x45 0xC0;
+  Computer.Mem.write computer.mem 0xC013 0x84;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -7332,9 +7509,9 @@ let%expect_test "testing LDA INDIRECTINDEXED (0xB1) zero" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x44) <- 0x10;
-  computer.banks.(0x45) <- 0xC0;
-  computer.banks.(0xC013) <- 0x00;
+  Computer.Mem.write computer.mem 0x44 0x10;
+  Computer.Mem.write computer.mem 0x45 0xC0;
+  Computer.Mem.write computer.mem 0xC013 0x00;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -7350,9 +7527,9 @@ let%expect_test "testing EOR INDIRECTINDEXED (0x51) non-zero positive" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x44) <- 0x10;
-  computer.banks.(0x45) <- 0xC0;
-  computer.banks.(0xC013) <- 0x04;
+  Computer.Mem.write computer.mem 0x44 0x10;
+  Computer.Mem.write computer.mem 0x45 0xC0;
+  Computer.Mem.write computer.mem 0xC013 0x04;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -7368,9 +7545,9 @@ let%expect_test "testing EOR INDIRECTINDEXED (0x51) Page Cross" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0xFF; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x44) <- 0x10;
-  computer.banks.(0x45) <- 0xC0;
-  computer.banks.(0xC10F) <- 0x04;
+  Computer.Mem.write computer.mem 0x44 0x10;
+  Computer.Mem.write computer.mem 0x45 0xC0;
+  Computer.Mem.write computer.mem 0xC10F 0x04;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -7386,9 +7563,9 @@ let%expect_test "testing EOR INDIRECTINDEXED (0x51) non-zero negative" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x44) <- 0x10;
-  computer.banks.(0x45) <- 0xC0;
-  computer.banks.(0xC013) <- 0x84;
+  Computer.Mem.write computer.mem 0x44 0x10;
+  Computer.Mem.write computer.mem 0x45 0xC0;
+  Computer.Mem.write computer.mem 0xC013 0x84;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -7404,9 +7581,9 @@ let%expect_test "testing EOR INDIRECTINDEXED (0x51) zero" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x44) <- 0x10;
-  computer.banks.(0x45) <- 0xC0;
-  computer.banks.(0xC013) <- 0x01;
+  Computer.Mem.write computer.mem 0x44 0x10;
+  Computer.Mem.write computer.mem 0x45 0xC0;
+  Computer.Mem.write computer.mem 0xC013 0x01;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -7422,9 +7599,9 @@ let%expect_test "testing AND INDIRECTINDEXED (0x31) non-zero positive" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x44) <- 0x10;
-  computer.banks.(0x45) <- 0xC0;
-  computer.banks.(0xC013) <- 0x05;
+  Computer.Mem.write computer.mem 0x44 0x10;
+  Computer.Mem.write computer.mem 0x45 0xC0;
+  Computer.Mem.write computer.mem 0xC013 0x05;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -7440,9 +7617,9 @@ let%expect_test "testing AND INDIRECTINDEXED (0x31) page cross" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0xFF; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x44) <- 0x10;
-  computer.banks.(0x45) <- 0xC0;
-  computer.banks.(0xC10F) <- 0x05;
+  Computer.Mem.write computer.mem 0x44 0x10;
+  Computer.Mem.write computer.mem 0x45 0xC0;
+  Computer.Mem.write computer.mem 0xC10F 0x05;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -7458,9 +7635,9 @@ let%expect_test "testing AND INDIRECTINDEXED (0x31) non-zero negative" =
       cpu = { computer.cpu with a = 0x81; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x44) <- 0x10;
-  computer.banks.(0x45) <- 0xC0;
-  computer.banks.(0xC013) <- 0x84;
+  Computer.Mem.write computer.mem 0x44 0x10;
+  Computer.Mem.write computer.mem 0x45 0xC0;
+  Computer.Mem.write computer.mem 0xC013 0x84;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -7476,9 +7653,9 @@ let%expect_test "testing AND INDEXEDINDIRECT (0x31) zero" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x44) <- 0x10;
-  computer.banks.(0x45) <- 0xC0;
-  computer.banks.(0xC013) <- 0x02;
+  Computer.Mem.write computer.mem 0x44 0x10;
+  Computer.Mem.write computer.mem 0x45 0xC0;
+  Computer.Mem.write computer.mem 0xC013 0x02;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -7494,9 +7671,9 @@ let%expect_test "testing ORA INDIRECTINDEXED (0x11) non-zero positive" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x44) <- 0x10;
-  computer.banks.(0x45) <- 0xC0;
-  computer.banks.(0xC013) <- 0x04;
+  Computer.Mem.write computer.mem 0x44 0x10;
+  Computer.Mem.write computer.mem 0x45 0xC0;
+  Computer.Mem.write computer.mem 0xC013 0x04;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -7512,9 +7689,9 @@ let%expect_test "testing ORA INDIRECTINDEXED (0x11) page cross" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0xFF; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x44) <- 0x10;
-  computer.banks.(0x45) <- 0xC0;
-  computer.banks.(0xC10F) <- 0x04;
+  Computer.Mem.write computer.mem 0x44 0x10;
+  Computer.Mem.write computer.mem 0x45 0xC0;
+  Computer.Mem.write computer.mem 0xC10F 0x04;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -7530,9 +7707,9 @@ let%expect_test "testing ORA INDIRECTINDEXED (0x11) non-zero negative" =
       cpu = { computer.cpu with a = 0x80; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x44) <- 0x10;
-  computer.banks.(0x45) <- 0xC0;
-  computer.banks.(0xC013) <- 0x04;
+  Computer.Mem.write computer.mem 0x44 0x10;
+  Computer.Mem.write computer.mem 0x45 0xC0;
+  Computer.Mem.write computer.mem 0xC013 0x04;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -7548,9 +7725,9 @@ let%expect_test "testing ORA INDIRECTINDEXED (0x11) zero" =
       cpu = { computer.cpu with a = 0x00; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x44) <- 0x10;
-  computer.banks.(0x45) <- 0xC0;
-  computer.banks.(0xC013) <- 0x00;
+  Computer.Mem.write computer.mem 0x44 0x10;
+  Computer.Mem.write computer.mem 0x45 0xC0;
+  Computer.Mem.write computer.mem 0xC013 0x00;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -7566,9 +7743,9 @@ let%expect_test "testing ADC INDIRECTINDEXED (0x71) non-zero positive" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x44) <- 0x10;
-  computer.banks.(0x45) <- 0xC0;
-  computer.banks.(0xC013) <- 0x05;
+  Computer.Mem.write computer.mem 0x44 0x10;
+  Computer.Mem.write computer.mem 0x45 0xC0;
+  Computer.Mem.write computer.mem 0xC013 0x05;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -7584,9 +7761,9 @@ let%expect_test "testing ADC INDIRECTINDEXED (0x71) page cross" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0xFF; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x44) <- 0x10;
-  computer.banks.(0x45) <- 0xC0;
-  computer.banks.(0xC10F) <- 0x05;
+  Computer.Mem.write computer.mem 0x44 0x10;
+  Computer.Mem.write computer.mem 0x45 0xC0;
+  Computer.Mem.write computer.mem 0xC10F 0x05;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -7602,9 +7779,9 @@ let%expect_test "testing ADC INDIRECTINDEXED (0x71) Incoming carry" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x01 }
     }
   in
-  computer.banks.(0x44) <- 0x10;
-  computer.banks.(0x45) <- 0xC0;
-  computer.banks.(0xC013) <- 0x05;
+  Computer.Mem.write computer.mem 0x44 0x10;
+  Computer.Mem.write computer.mem 0x45 0xC0;
+  Computer.Mem.write computer.mem 0xC013 0x05;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -7620,9 +7797,9 @@ let%expect_test "testing ADC INDIRECTINDEXED (0x71) Generating Carry" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x44) <- 0x10;
-  computer.banks.(0x45) <- 0xC0;
-  computer.banks.(0xC013) <- 0xFF;
+  Computer.Mem.write computer.mem 0x44 0x10;
+  Computer.Mem.write computer.mem 0x45 0xC0;
+  Computer.Mem.write computer.mem 0xC013 0xFF;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -7638,9 +7815,9 @@ let%expect_test "testing ADC INDIRECTINDEXED (0x71) Pos+Pos=Neg" =
       cpu = { computer.cpu with a = 0x7F; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x44) <- 0x10;
-  computer.banks.(0x45) <- 0xC0;
-  computer.banks.(0xC013) <- 0x01;
+  Computer.Mem.write computer.mem 0x44 0x10;
+  Computer.Mem.write computer.mem 0x45 0xC0;
+  Computer.Mem.write computer.mem 0xC013 0x01;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -7656,9 +7833,9 @@ let%expect_test "testing ADC INDIRECTINDEXED (0x71) Pos+Neg" =
       cpu = { computer.cpu with a = 0x7F; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x44) <- 0x10;
-  computer.banks.(0x45) <- 0xC0;
-  computer.banks.(0xC013) <- 0x80;
+  Computer.Mem.write computer.mem 0x44 0x10;
+  Computer.Mem.write computer.mem 0x45 0xC0;
+  Computer.Mem.write computer.mem 0xC013 0x80;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -7674,9 +7851,9 @@ let%expect_test "testing ADC INDIRECTINDEXED (0x71) Neg+Neg=Pos" =
       cpu = { computer.cpu with a = 0x80; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x44) <- 0x10;
-  computer.banks.(0x45) <- 0xC0;
-  computer.banks.(0xC013) <- 0xFF;
+  Computer.Mem.write computer.mem 0x44 0x10;
+  Computer.Mem.write computer.mem 0x45 0xC0;
+  Computer.Mem.write computer.mem 0xC013 0xFF;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -7692,9 +7869,9 @@ let%expect_test "testing STA INDIRECTINDEXED (0x91)" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x44) <- 0x10;
-  computer.banks.(0x45) <- 0xC0;
-  computer.banks.(0xC013) <- 0xEA;
+  Computer.Mem.write computer.mem 0x44 0x10;
+  Computer.Mem.write computer.mem 0x45 0xC0;
+  Computer.Mem.write computer.mem 0xC013 0xEA;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   dump_last_execution_mem executions [ 0xC013 ];
@@ -7714,9 +7891,9 @@ let%expect_test "testing CMP INDIRECTINDEXED (0xD1) Equality" =
       cpu = { computer.cpu with a = 0x42; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x44) <- 0x10;
-  computer.banks.(0x45) <- 0xC0;
-  computer.banks.(0xC013) <- 0x42;
+  Computer.Mem.write computer.mem 0x44 0x10;
+  Computer.Mem.write computer.mem 0x45 0xC0;
+  Computer.Mem.write computer.mem 0xC013 0x42;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -7732,9 +7909,9 @@ let%expect_test "testing CMP INDIRECTINDEXED (0xD1) page cross" =
       cpu = { computer.cpu with a = 0x42; x = 0x02; y = 0xFF; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x44) <- 0x10;
-  computer.banks.(0x45) <- 0xC0;
-  computer.banks.(0xC10F) <- 0x42;
+  Computer.Mem.write computer.mem 0x44 0x10;
+  Computer.Mem.write computer.mem 0x45 0xC0;
+  Computer.Mem.write computer.mem 0xC10F 0x42;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -7750,9 +7927,9 @@ let%expect_test "testing CMP INDIRECTINDEXED (0xD1) Greater Than" =
       cpu = { computer.cpu with a = 0xFF; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x44) <- 0x10;
-  computer.banks.(0x45) <- 0xC0;
-  computer.banks.(0xC013) <- 0x01;
+  Computer.Mem.write computer.mem 0x44 0x10;
+  Computer.Mem.write computer.mem 0x45 0xC0;
+  Computer.Mem.write computer.mem 0xC013 0x01;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -7768,9 +7945,9 @@ let%expect_test "testing CMP INDIRECTINDEXED (0xD1) Less Than" =
       cpu = { computer.cpu with a = 0x02; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x44) <- 0x10;
-  computer.banks.(0x45) <- 0xC0;
-  computer.banks.(0xC013) <- 0x03;
+  Computer.Mem.write computer.mem 0x44 0x10;
+  Computer.Mem.write computer.mem 0x45 0xC0;
+  Computer.Mem.write computer.mem 0xC013 0x03;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -7786,9 +7963,9 @@ let%expect_test "testing SBC INDIRECTINDEXED (0xF1) No Borrow" =
       cpu = { computer.cpu with a = 0x05; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x01 }
     }
   in
-  computer.banks.(0x44) <- 0x10;
-  computer.banks.(0x45) <- 0xC0;
-  computer.banks.(0xC013) <- 0x02;
+  Computer.Mem.write computer.mem 0x44 0x10;
+  Computer.Mem.write computer.mem 0x45 0xC0;
+  Computer.Mem.write computer.mem 0xC013 0x02;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -7804,9 +7981,9 @@ let%expect_test "testing SBC INDIRECTINDEXED (0xF1) Page Cross" =
       cpu = { computer.cpu with a = 0x05; x = 0x02; y = 0xFF; sp = 0xFD; sr = 0x01 }
     }
   in
-  computer.banks.(0x44) <- 0x10;
-  computer.banks.(0x45) <- 0xC0;
-  computer.banks.(0xC10F) <- 0x02;
+  Computer.Mem.write computer.mem 0x44 0x10;
+  Computer.Mem.write computer.mem 0x45 0xC0;
+  Computer.Mem.write computer.mem 0xC10F 0x02;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -7822,9 +7999,9 @@ let%expect_test "testing SBC INDIRECTINDEXED (0xF1) With  Borrow" =
       cpu = { computer.cpu with a = 0x05; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x44) <- 0x10;
-  computer.banks.(0x45) <- 0xC0;
-  computer.banks.(0xC013) <- 0x02;
+  Computer.Mem.write computer.mem 0x44 0x10;
+  Computer.Mem.write computer.mem 0x45 0xC0;
+  Computer.Mem.write computer.mem 0xC013 0x02;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -7840,9 +8017,9 @@ let%expect_test "testing SBC INDIRECTINDEXED (0xF1) Underflow" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x01 }
     }
   in
-  computer.banks.(0x44) <- 0x10;
-  computer.banks.(0x45) <- 0xC0;
-  computer.banks.(0xC013) <- 0x02;
+  Computer.Mem.write computer.mem 0x44 0x10;
+  Computer.Mem.write computer.mem 0x45 0xC0;
+  Computer.Mem.write computer.mem 0xC013 0x02;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -7858,9 +8035,9 @@ let%expect_test "testing SBC INDIRECTINDEXED (0xF1) Overflow" =
       cpu = { computer.cpu with a = 0x80; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x01 }
     }
   in
-  computer.banks.(0x44) <- 0x10;
-  computer.banks.(0x45) <- 0xC0;
-  computer.banks.(0xC013) <- 0x01;
+  Computer.Mem.write computer.mem 0x44 0x10;
+  Computer.Mem.write computer.mem 0x45 0xC0;
+  Computer.Mem.write computer.mem 0xC013 0x01;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -8476,7 +8653,7 @@ let%expect_test "testing JSR ABSOLUTE (0x20)" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFD; sr = 0x00 }
     }
   in
-  computer.banks.(0x4269) <- 0xEA;
+  Computer.Mem.write computer.mem 0x4269 0xEA;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   dump_last_execution_mem executions [ 0x1FB; 0x1FC; 0x1FD; 0x1FE; 0x1FF ];
@@ -8500,11 +8677,11 @@ let%expect_test "testing RTS IMPLIED (0x60)" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFB; sr = 0x00 }
     }
   in
-  computer.banks.(0x01FB) <- 0xFF;
-  computer.banks.(0x01FC) <- 0x02;
-  computer.banks.(0x01FD) <- 0x10;
-  computer.banks.(0x01FE) <- 0x81;
-  computer.banks.(0x01FF) <- 0x82;
+  Computer.Mem.write computer.mem 0x01FB 0xFF;
+  Computer.Mem.write computer.mem 0x01FC 0x02;
+  Computer.Mem.write computer.mem 0x01FD 0x10;
+  Computer.Mem.write computer.mem 0x01FE 0x81;
+  Computer.Mem.write computer.mem 0x01FF 0x82;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   dump_last_execution_mem executions [ 0x1FB; 0x1FC; 0x1FD; 0x1FE; 0x1FF ];
@@ -8528,11 +8705,11 @@ let%expect_test "testing RTI IMPLIED (0x40)" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFA; sr = 0x00 }
     }
   in
-  computer.banks.(0x01FB) <- 0b0100_0001;
-  computer.banks.(0x01FC) <- 0x02;
-  computer.banks.(0x01FD) <- 0x20;
-  computer.banks.(0x01FE) <- 0x81;
-  computer.banks.(0x01FF) <- 0x82;
+  Computer.Mem.write computer.mem 0x01FB 0b0100_0001;
+  Computer.Mem.write computer.mem 0x01FC 0x02;
+  Computer.Mem.write computer.mem 0x01FD 0x20;
+  Computer.Mem.write computer.mem 0x01FE 0x81;
+  Computer.Mem.write computer.mem 0x01FF 0x82;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   dump_last_execution_mem executions [ 0x1FB; 0x1FC; 0x1FD; 0x1FE; 0x1FF ];
@@ -8556,11 +8733,11 @@ let%expect_test "testing RTI IMPLIED (0x40) should clear break flag" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFA; sr = 0x00 }
     }
   in
-  computer.banks.(0x01FB) <- 0b0101_0001;
-  computer.banks.(0x01FC) <- 0x02;
-  computer.banks.(0x01FD) <- 0x20;
-  computer.banks.(0x01FE) <- 0x81;
-  computer.banks.(0x01FF) <- 0x82;
+  Computer.Mem.write computer.mem 0x01FB 0b0101_0001;
+  Computer.Mem.write computer.mem 0x01FC 0x02;
+  Computer.Mem.write computer.mem 0x01FD 0x20;
+  Computer.Mem.write computer.mem 0x01FE 0x81;
+  Computer.Mem.write computer.mem 0x01FF 0x82;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   dump_last_execution_mem executions [ 0x1FB; 0x1FC; 0x1FD; 0x1FE; 0x1FF ];
@@ -8583,8 +8760,8 @@ let%expect_test "testing JMP INDIRECT Normal (0x6C)" =
   let computer =
     { computer with cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sr = 0x00 } }
   in
-  computer.banks.(0x6944) <- 0xC4;
-  computer.banks.(0x6945) <- 0x80;
+  Computer.Mem.write computer.mem 0x6944 0xC4;
+  Computer.Mem.write computer.mem 0x6945 0x80;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   [%expect
@@ -8600,13 +8777,13 @@ let%expect_test "testing BRK IMPLIED (0x00)" =
       cpu = { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFE; sr = 0x01 }
     }
   in
-  computer.banks.(0x01FB) <- 0x85;
-  computer.banks.(0x01FC) <- 0x84;
-  computer.banks.(0x01FD) <- 0x83;
-  computer.banks.(0x01FE) <- 0x82;
-  computer.banks.(0x01FF) <- 0x81;
-  computer.banks.(0xFFFE) <- 0x10;
-  computer.banks.(0xFFFF) <- 0xC0;
+  Computer.Mem.write computer.mem 0x01FB 0x85;
+  Computer.Mem.write computer.mem 0x01FC 0x84;
+  Computer.Mem.write computer.mem 0x01FD 0x83;
+  Computer.Mem.write computer.mem 0x01FE 0x82;
+  Computer.Mem.write computer.mem 0x01FF 0x81;
+  Computer.Mem.write computer.mem 0xFFFE 0x10;
+  Computer.Mem.write computer.mem 0xFFFF 0xC0;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   dump_last_execution_mem executions [ 0x1FB; 0x1FC; 0x1FD; 0x1FE; 0x1FF ];
@@ -8622,8 +8799,8 @@ let%expect_test "testing BRK IMPLIED (0x00)" =
 ;;
 
 let%expect_test "testing IRQ masked" =
-  let cycles = 7 in
-  let pgm = [ 0xEA ] in
+  let cycles = 2 in
+  let pgm = [ 0xEA; 0xEA ] in
   let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
@@ -8638,23 +8815,23 @@ let%expect_test "testing IRQ masked" =
         }
     }
   in
-  computer.banks.(0x01FB) <- 0x85;
-  computer.banks.(0x01FC) <- 0x84;
-  computer.banks.(0x01FD) <- 0x83;
-  computer.banks.(0x01FE) <- 0x82;
-  computer.banks.(0x01FF) <- 0x81;
-  computer.banks.(0xFFFA) <- 0xFA;
-  computer.banks.(0xFFFB) <- 0xC0;
-  computer.banks.(0xFFFC) <- 0xFC;
-  computer.banks.(0xFFFD) <- 0xC0;
-  computer.banks.(0xFFFE) <- 0xFE;
-  computer.banks.(0xFFFF) <- 0xC0;
+  Computer.Mem.write computer.mem 0x01FB 0x85;
+  Computer.Mem.write computer.mem 0x01FC 0x84;
+  Computer.Mem.write computer.mem 0x01FD 0x83;
+  Computer.Mem.write computer.mem 0x01FE 0x82;
+  Computer.Mem.write computer.mem 0x01FF 0x81;
+  Computer.Mem.write computer.mem 0xFFFA 0xFA;
+  Computer.Mem.write computer.mem 0xFFFB 0xC0;
+  Computer.Mem.write computer.mem 0xFFFC 0xFC;
+  Computer.Mem.write computer.mem 0xFFFD 0xC0;
+  Computer.Mem.write computer.mem 0xFFFE 0xFE;
+  Computer.Mem.write computer.mem 0xFFFF 0xC0;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   dump_last_execution_mem executions [ 0x1FB; 0x1FC; 0x1FD; 0x1FE; 0x1FF ];
   [%expect
     {|
-    ab: 0x1001 db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0x1001 data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFE sr: nv-bdIzc pc: 0x1001 inst: NOP
+    ab: 0x1001 db: 0xEA phy2: 0 cycle: 1 rw:  true address: 0x1001 data: 0xEA a: 0x01 x: 0x02 y: 0x03 sp: 0xFE sr: nv-bdIzc pc: 0x1001 inst: NOP
     Mem: 0x01FB : 0x85
     Mem: 0x01FC : 0x84
     Mem: 0x01FD : 0x83
@@ -8664,37 +8841,32 @@ let%expect_test "testing IRQ masked" =
 ;;
 
 let%expect_test "testing IRQ unmasked" =
-  let cycles = 10 in
-  let pgm = [ 0xEA ] in
+  let cycles = 9 in
+  let pgm = [ 0xEA; 0xEA ] in
   let computer = init_test_computer 0x1000 pgm in
   let computer =
     { computer with
       cpu =
-        { computer.cpu with
-          irq = true
-        ; a = 0x01
-        ; x = 0x02
-        ; y = 0x03
-        ; sp = 0xFE
-        ; sr = 0b0000_0000
-        }
+        { computer.cpu with a = 0x01; x = 0x02; y = 0x03; sp = 0xFE; sr = 0b0000_0000 }
+    ; cia1 = { computer.cia1 with irqb = false }
     }
   in
-  computer.banks.(0x01FB) <- 0x85;
-  computer.banks.(0x01FC) <- 0x84;
-  computer.banks.(0x01FD) <- 0x83;
-  computer.banks.(0x01FE) <- 0x82;
-  computer.banks.(0x01FF) <- 0x81;
+  Computer.Mem.write computer.mem 0x01FB 0x85;
+  Computer.Mem.write computer.mem 0x01FC 0x84;
+  Computer.Mem.write computer.mem 0x01FD 0x83;
+  Computer.Mem.write computer.mem 0x01FE 0x82;
+  Computer.Mem.write computer.mem 0x01FF 0x81;
   (* NMI *)
-  computer.banks.(0xFFFA) <- 0xFA;
-  computer.banks.(0xFFFB) <- 0xC0;
+  Computer.Mem.write computer.mem 0xFFFA 0xFA;
+  Computer.Mem.write computer.mem 0xFFFB 0xC0;
   (* RESET *)
-  computer.banks.(0xFFFC) <- 0xFC;
-  computer.banks.(0xFFFD) <- 0xC0;
+  Computer.Mem.write computer.mem 0xFFFC 0xFC;
+  Computer.Mem.write computer.mem 0xFFFD 0xC0;
   (* IRQ and BRK *)
-  computer.banks.(0xFFFE) <- 0xFE;
-  computer.banks.(0xFFFF) <- 0xC0;
+  Computer.Mem.write computer.mem 0xFFFE 0xFE;
+  Computer.Mem.write computer.mem 0xFFFF 0xC0;
   let executions = execute_cycles cycles computer in
+  (* dump_executions executions; *)
   dump_last_execution executions;
   dump_last_execution_mem executions [ 0x1FB; 0x1FC; 0x1FD; 0x1FE; 0x1FF ];
   [%expect
@@ -8702,7 +8874,7 @@ let%expect_test "testing IRQ unmasked" =
     ab: 0xC0FE db: 0xFF phy2: 0 cycle: 1 rw:  true address: 0xC0FE data: 0xFF a: 0x01 x: 0x02 y: 0x03 sp: 0xFB sr: nv-bdIzc pc: 0xC0FE inst: BRK
     Mem: 0x01FB : 0x85
     Mem: 0x01FC : 0x04
-    Mem: 0x01FD : 0x02
+    Mem: 0x01FD : 0x00
     Mem: 0x01FE : 0x10
     Mem: 0x01FF : 0x81
     |}]
@@ -8725,20 +8897,20 @@ let%expect_test "testing NMI unmasked" =
         }
     }
   in
-  computer.banks.(0x01FB) <- 0x85;
-  computer.banks.(0x01FC) <- 0x84;
-  computer.banks.(0x01FD) <- 0x83;
-  computer.banks.(0x01FE) <- 0x82;
-  computer.banks.(0x01FF) <- 0x81;
+  Computer.Mem.write computer.mem 0x01FB 0x85;
+  Computer.Mem.write computer.mem 0x01FC 0x84;
+  Computer.Mem.write computer.mem 0x01FD 0x83;
+  Computer.Mem.write computer.mem 0x01FE 0x82;
+  Computer.Mem.write computer.mem 0x01FF 0x81;
   (* NMI *)
-  computer.banks.(0xFFFA) <- 0xFA;
-  computer.banks.(0xFFFB) <- 0xC0;
+  Computer.Mem.write computer.mem 0xFFFA 0xFA;
+  Computer.Mem.write computer.mem 0xFFFB 0xC0;
   (* RESET *)
-  computer.banks.(0xFFFC) <- 0xFC;
-  computer.banks.(0xFFFD) <- 0xC0;
+  Computer.Mem.write computer.mem 0xFFFC 0xFC;
+  Computer.Mem.write computer.mem 0xFFFD 0xC0;
   (* IRQ and BRK *)
-  computer.banks.(0xFFFE) <- 0xFE;
-  computer.banks.(0xFFFF) <- 0xC0;
+  Computer.Mem.write computer.mem 0xFFFE 0xFE;
+  Computer.Mem.write computer.mem 0xFFFF 0xC0;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   dump_last_execution_mem executions [ 0x1FB; 0x1FC; 0x1FD; 0x1FE; 0x1FF ];
@@ -8770,20 +8942,20 @@ let%expect_test "testing NMI masked" =
         }
     }
   in
-  computer.banks.(0x01FB) <- 0x85;
-  computer.banks.(0x01FC) <- 0x84;
-  computer.banks.(0x01FD) <- 0x83;
-  computer.banks.(0x01FE) <- 0x82;
-  computer.banks.(0x01FF) <- 0x81;
+  Computer.Mem.write computer.mem 0x01FB 0x85;
+  Computer.Mem.write computer.mem 0x01FC 0x84;
+  Computer.Mem.write computer.mem 0x01FD 0x83;
+  Computer.Mem.write computer.mem 0x01FE 0x82;
+  Computer.Mem.write computer.mem 0x01FF 0x81;
   (* NMI *)
-  computer.banks.(0xFFFA) <- 0xFA;
-  computer.banks.(0xFFFB) <- 0xC0;
+  Computer.Mem.write computer.mem 0xFFFA 0xFA;
+  Computer.Mem.write computer.mem 0xFFFB 0xC0;
   (* RESET *)
-  computer.banks.(0xFFFC) <- 0xFC;
-  computer.banks.(0xFFFD) <- 0xC0;
+  Computer.Mem.write computer.mem 0xFFFC 0xFC;
+  Computer.Mem.write computer.mem 0xFFFD 0xC0;
   (* IRQ and BRK *)
-  computer.banks.(0xFFFE) <- 0xFE;
-  computer.banks.(0xFFFF) <- 0xC0;
+  Computer.Mem.write computer.mem 0xFFFE 0xFE;
+  Computer.Mem.write computer.mem 0xFFFF 0xC0;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   dump_last_execution_mem executions [ 0x1FB; 0x1FC; 0x1FD; 0x1FE; 0x1FF ];
@@ -8815,20 +8987,17 @@ let%expect_test "testing RESET unmasked" =
         }
     }
   in
-  computer.banks.(0x01FB) <- 0x85;
-  computer.banks.(0x01FC) <- 0x84;
-  computer.banks.(0x01FD) <- 0x83;
-  computer.banks.(0x01FE) <- 0x82;
-  computer.banks.(0x01FF) <- 0x81;
-  (* NMI *)
-  computer.banks.(0xFFFA) <- 0xFA;
-  computer.banks.(0xFFFB) <- 0xC0;
-  (* RESET *)
-  computer.banks.(0xFFFC) <- 0xFC;
-  computer.banks.(0xFFFD) <- 0xC0;
-  (* IRQ and BRK *)
-  computer.banks.(0xFFFE) <- 0xFE;
-  computer.banks.(0xFFFF) <- 0xC0;
+  Computer.Mem.write computer.mem 0x01FB 0x85;
+  Computer.Mem.write computer.mem 0x01FC 0x84;
+  Computer.Mem.write computer.mem 0x01FD 0x83;
+  Computer.Mem.write computer.mem 0x01FE 0x82;
+  Computer.Mem.write computer.mem 0x01FF 0x81;
+  Computer.Mem.write computer.mem 0xFFFA 0xFA;
+  Computer.Mem.write computer.mem 0xFFFB 0xC0;
+  Computer.Mem.write computer.mem 0xFFFC 0xFC;
+  Computer.Mem.write computer.mem 0xFFFD 0xC0;
+  Computer.Mem.write computer.mem 0xFFFE 0xFE;
+  Computer.Mem.write computer.mem 0xFFFF 0xC0;
   let executions = execute_cycles cycles computer in
   dump_last_execution executions;
   dump_last_execution_mem executions [ 0x1FB; 0x1FC; 0x1FD; 0x1FE; 0x1FF ];
